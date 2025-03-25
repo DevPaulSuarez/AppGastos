@@ -1,0 +1,48 @@
+{
+  "project_info": {
+    "project_number": "210281568032",
+    "firebase_url": "https://control-gasto-pess-default-rtdb.firebaseio.com",
+    "project_id": "control-gasto-pess",
+    "storage_bucket": "control-gasto-pess.appspot.com"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:210281568032:android:2b04a85e4ddf6ab931a945",
+        "android_client_info": {
+          "package_name": "com.example.primera_app_curso"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "210281568032-rvqpnl5hdl2inpe6683o4c57ib78m0md.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.primera_app_curso",
+            "certificate_hash": "a89cd1dc5fbc5ec3a33c3b401394cbfbcc4e536e"
+          }
+        },
+        {
+          "client_id": "210281568032-b5vfba159ktp9kesc7841702bm43d8q0.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAEU8_vTPf8ysN83Z81zJsNFIgmVNZnUec"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "210281568032-b5vfba159ktp9kesc7841702bm43d8q0.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
