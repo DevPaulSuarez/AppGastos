@@ -72,3 +72,37 @@ Follow these steps to run the project locally:
 1. **Clona este repositorio / Clone this repository**:
    ```bash
    git clone https://github.com/DevPaulSuarez/AppGastos.git
+
+
+   # 💸 Aplicación de Control de Gastos Personales
+
+Aplicación móvil desarrollada con **Flutter 2.5.0** y **Dart 2.14**, diseñada para ayudarte a registrar, visualizar y administrar tus gastos personales.
+Mobile app developed with **Flutter 2.5.0** and **Dart 2.14**, designed to help you record, view, and manage your personal expenses.
+---
+
+## 🇪🇸 Español
+
+### 🚀 Tecnologías
+
+- Flutter SDK: **2.5.0-stable**
+- Dart SDK: **2.14.0**
+- Firebase (si aplica)
+- SQLite / Local Storage
+
+---
+
+### 🔧 Instalación
+
+> Es importante utilizar la **versión exacta de Flutter 2.5.0** para evitar errores de compatibilidad.
+> It is important to use the **exact version of Flutter 2.5.0** to avoid compatibility errors.
+
+1. Descarga Flutter 2.5.0 desde:
+1. Download Flutter 2.5.0 from:
+   [https://docs.flutter.dev/release/archived](https://docs.flutter.dev/release/archived)
+
+2. Extrae el contenido y configura el entorno:
+2. Extract the contents and configure the environment:
+   
+```bash
+flutter doctor
+
