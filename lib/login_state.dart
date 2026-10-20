@@ -6,7 +6,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 class LoginState with ChangeNotifier {
   static const String TAG = "LoginGoogleUtils";
   final FirebaseAuth _auth = FirebaseAuth.instance;
-  final GoogleSignIn _googleSignIn = GoogleSignIn();
+  final GoogleSignIn _googleSignIn = GoogleSignIn.instance;
+  Future<void>? _googleSignInInit;
 
   late SharedPreferences _prefs;
 
@@ -55,6 +56,7 @@ class LoginState with ChangeNotifier {
   Future<void> logout() async {
     try {
       await _prefs.clear();
+      await (_googleSignInInit ??= _googleSignIn.initialize());
       await _googleSignIn.signOut();
       await _auth.signOut();
       _loggedIn = false;
@@ -68,18 +70,23 @@ class LoginState with ChangeNotifier {
 
   Future<User> _handleSignIn() async {
     try {
-      final GoogleSignInAccount? account = await _googleSignIn.signIn();
-      if (account == null) throw Exception('El inicio de sesión con Google fue cancelado');
-      
-      final GoogleSignInAuthentication authentication = await account.authentication;
-      final OAuthCredential credential = GoogleAuthProvider.credential(
-          idToken: authentication.idToken,
-          accessToken: authentication.accessToken);
+      await (_googleSignInInit ??= _googleSignIn.initialize());
+      final GoogleSignInAccount account = await _googleSignIn.authenticate();
+
+      final GoogleSignInAuthentication authentication = account.authentication;
+      final OAuthCredential credential =
+          GoogleAuthProvider.credential(idToken: authentication.idToken);
 
       final UserCredential authResult = await _auth.signInWithCredential(credential);
       final User? userpess = authResult.user;
       if (userpess == null) throw Exception('No se pudo obtener el usuario del resultado de autenticación');
       return userpess;
+    } on GoogleSignInException catch (e) {
+      debugPrint('Error en _handleSignIn: $e');
+      if (e.code == GoogleSignInExceptionCode.canceled) {
+        throw Exception('El inicio de sesión con Google fue cancelado');
+      }
+      rethrow;
     } catch (e) {
       debugPrint('Error en _handleSignIn: $e');
       rethrow;
