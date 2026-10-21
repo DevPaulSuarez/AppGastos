@@ -26,7 +26,19 @@ class BalanceParams {
 class BalancePage extends StatelessWidget {
   final BalanceParams params;
 
-  const BalancePage({super.key, required this.params});
+  /// Solo para ver (ej. la cuenta personal mientras están en pareja): sin
+  /// agregar ni borrar, y con flechas para cambiar de mes.
+  final bool readOnly;
+  final String? title;
+  final ValueChanged<int>? onChangeMonth;
+
+  const BalancePage({
+    super.key,
+    required this.params,
+    this.readOnly = false,
+    this.title,
+    this.onChangeMonth,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -35,16 +47,48 @@ class BalancePage extends StatelessWidget {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text('Resumen de ${monthNames[params.month - 1].toLowerCase()}'),
+        title: Text(
+          title ?? 'Resumen de ${monthNames[params.month - 1].toLowerCase()}',
+        ),
+        bottom: onChangeMonth == null
+            ? null
+            : PreferredSize(
+                preferredSize: const Size.fromHeight(48),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    IconButton(
+                      tooltip: 'Mes anterior',
+                      icon: const Icon(Icons.chevron_left),
+                      onPressed: () => onChangeMonth!(-1),
+                    ),
+                    Text(
+                      '${monthNames[params.month - 1][0]}'
+                      '${monthNames[params.month - 1].substring(1).toLowerCase()} '
+                      '${params.year}',
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: 'Mes siguiente',
+                      icon: const Icon(Icons.chevron_right),
+                      onPressed: () => onChangeMonth!(1),
+                    ),
+                  ],
+                ),
+              ),
         actions: [
-          IconButton(
-            tooltip: 'Informe en PDF',
-            icon: const Icon(Icons.picture_as_pdf_outlined),
-            onPressed: () => Navigator.of(context).pushNamed(
-              '/report',
-              arguments: ReportParams(params.year, month: params.month),
+          if (!readOnly)
+            IconButton(
+              tooltip: 'Informe en PDF',
+              icon: const Icon(Icons.picture_as_pdf_outlined),
+              onPressed: () => Navigator.of(context).pushNamed(
+                '/report',
+                arguments: ReportParams(params.year, month: params.month),
+              ),
             ),
-          ),
         ],
       ),
       body: MultiStreamBuilder(
@@ -248,29 +292,31 @@ class BalancePage extends StatelessWidget {
                       money(income.amount),
                       style: const TextStyle(fontWeight: FontWeight.bold),
                     ),
-                    IconButton(
-                      icon: const Icon(Icons.delete_outline),
-                      onPressed: () async {
-                        if (await confirmDialog(
-                          context,
-                          '¿Borrar este ingreso de ${money(income.amount)}?',
-                          confirm: 'Borrar',
-                        )) {
-                          finance.deleteIncome(income.id);
-                        }
-                      },
-                    ),
+                    if (!readOnly)
+                      IconButton(
+                        icon: const Icon(Icons.delete_outline),
+                        onPressed: () async {
+                          if (await confirmDialog(
+                            context,
+                            '¿Borrar este ingreso de ${money(income.amount)}?',
+                            confirm: 'Borrar',
+                          )) {
+                            finance.deleteIncome(income.id);
+                          }
+                        },
+                      ),
                   ],
                 ),
               ),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: TextButton.icon(
-                icon: const Icon(Icons.add),
-                label: const Text('Agregar ingreso'),
-                onPressed: () => _addIncome(context, finance, people),
+            if (!readOnly)
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton.icon(
+                  icon: const Icon(Icons.add),
+                  label: const Text('Agregar ingreso'),
+                  onPressed: () => _addIncome(context, finance, people),
+                ),
               ),
-            ),
           ],
         ),
         // En cuenta individual repetiría los números de arriba.
@@ -322,19 +368,22 @@ class BalancePage extends StatelessWidget {
             ],
           ),
         ],
-        const SizedBox(height: 24),
-        OutlinedButton.icon(
-          icon: const Icon(Icons.calendar_month_outlined),
-          label: Text('Resumen del año ${params.year}'),
-          onPressed: () =>
-              Navigator.of(context).pushNamed('/year', arguments: params.year),
-        ),
-        const SizedBox(height: 8),
-        FilledButton.icon(
-          icon: const Icon(Icons.savings),
-          label: const Text('Metas de ahorro'),
-          onPressed: () => Navigator.of(context).pushNamed('/goals'),
-        ),
+        if (!readOnly) ...[
+          const SizedBox(height: 24),
+          OutlinedButton.icon(
+            icon: const Icon(Icons.calendar_month_outlined),
+            label: Text('Resumen del año ${params.year}'),
+            onPressed: () => Navigator.of(
+              context,
+            ).pushNamed('/year', arguments: params.year),
+          ),
+          const SizedBox(height: 8),
+          FilledButton.icon(
+            icon: const Icon(Icons.savings),
+            label: const Text('Metas de ahorro'),
+            onPressed: () => Navigator.of(context).pushNamed('/goals'),
+          ),
+        ],
         const SizedBox(height: 24),
       ],
     );

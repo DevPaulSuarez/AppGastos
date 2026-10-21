@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:primera_app_curso/currency.dart';
 import 'package:primera_app_curso/categories.dart';
 import 'package:primera_app_curso/config.dart';
+import 'package:primera_app_curso/couple/space_state.dart';
 import 'package:primera_app_curso/data/demo_data.dart';
 import 'package:primera_app_curso/data/store.dart';
+import 'package:primera_app_curso/pages/couple/couple_pages.dart';
 import 'package:primera_app_curso/pages/report_page.dart';
 import 'package:primera_app_curso/finance_repository.dart';
 import 'package:primera_app_curso/login_state.dart';
@@ -57,24 +59,7 @@ class _SettingsPageState extends State<SettingsPage> {
             padding: const EdgeInsets.only(bottom: 32.0),
             children: [
               const _Section('Personas'),
-              SwitchListTile(
-                secondary: const Icon(Icons.people_outline),
-                title: const Text('Cuenta de pareja'),
-                subtitle: Text(
-                  solo
-                      ? 'Ahora es individual: solo tus gastos'
-                      : 'Registran juntos y ven quién pagó qué',
-                ),
-                value: !solo,
-                onChanged: (couple) => finance.setSolo(!couple),
-              ),
-              for (var i = 0; i < people.length; i++)
-                ListTile(
-                  leading: const Icon(Icons.person),
-                  title: Text(people[i]),
-                  trailing: const Icon(Icons.edit),
-                  onTap: () => _editName(context, finance, people, i),
-                ),
+              ..._people(context, finance, people, solo),
               const _Section('Moneda'),
               ListTile(
                 leading: const Icon(Icons.currency_exchange),
@@ -289,6 +274,113 @@ class _SettingsPageState extends State<SettingsPage> {
         },
       ),
     );
+  }
+
+  /// Quiénes usan la cuenta. Con la nube: invitar a la pareja o unirse con
+  /// un código, y en pareja "Paul ❤ Ana", el historial personal y salir de
+  /// la pareja. En modo de pruebas (un solo teléfono) sigue el interruptor
+  /// para anotar entre dos en el mismo teléfono.
+  List<Widget> _people(
+    BuildContext context,
+    FinanceRepository finance,
+    List<String> people,
+    bool solo,
+  ) {
+    final names = [
+      for (var i = 0; i < people.length; i++)
+        ListTile(
+          leading: const Icon(Icons.person),
+          title: Text(people[i]),
+          trailing: const Icon(Icons.edit),
+          onTap: () => _editName(context, finance, people, i),
+        ),
+    ];
+    if (modoPruebas) {
+      return [
+        SwitchListTile(
+          secondary: const Icon(Icons.people_outline),
+          title: const Text('Cuenta de pareja'),
+          subtitle: Text(
+            solo
+                ? 'Ahora es individual: solo tus gastos'
+                : 'Registran juntos y ven quién pagó qué',
+          ),
+          value: !solo,
+          onChanged: (couple) => finance.setSolo(!couple),
+        ),
+        ...names,
+      ];
+    }
+    final space = Provider.of<SpaceState>(context);
+    final couple = space.activeCouple;
+    final past = space.pastCouples;
+    return [
+      if (couple != null) ...[
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+          child: CoupleBadge(names: people),
+        ),
+        ListTile(
+          leading: const Icon(Icons.history),
+          title: const Text('Mi historial personal'),
+          subtitle: const Text('Tu cuenta de antes, solo para ver'),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (_) => HistoryPage(
+                store: FirestoreStore(space.uid!),
+                title: 'Mi historial personal',
+              ),
+            ),
+          ),
+        ),
+        ListTile(
+          leading: const Icon(Icons.logout, color: expenseColor),
+          title: const Text(
+            'Salir de la pareja',
+            style: TextStyle(color: expenseColor),
+          ),
+          onTap: () => Navigator.of(context).pushNamed('/leave'),
+        ),
+      ] else ...[
+        ...names,
+        ListTile(
+          leading: const Icon(Icons.favorite_border),
+          title: const Text('Invitar a mi pareja'),
+          subtitle: Text(
+            space.myInvitation?.status == 'requested'
+                ? '${space.myInvitation!.joinerName} quiere unirse'
+                : 'Te damos un código para enviarle',
+          ),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: () => Navigator.of(context).pushNamed('/invite'),
+        ),
+        ListTile(
+          leading: const Icon(Icons.vpn_key_outlined),
+          title: const Text('Tengo un código de invitación'),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: () => Navigator.of(context).pushNamed('/join'),
+        ),
+      ],
+      for (final old in past)
+        ListTile(
+          leading: const Icon(Icons.inventory_2_outlined),
+          title: Text('Cuenta con ${old.partnerName(space.uid!)}'),
+          subtitle: Text(
+            'Terminó el ${old.endedAt!.day}/${old.endedAt!.month}/'
+            '${old.endedAt!.year} · solo para ver',
+          ),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (_) => HistoryPage(
+                store: FirestoreStore.couple(old.id),
+                title: 'Con ${old.partnerName(space.uid!)}',
+              ),
+            ),
+          ),
+        ),
+    ];
   }
 
   Future<void> _changeCurrency(

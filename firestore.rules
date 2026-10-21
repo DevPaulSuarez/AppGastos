@@ -1,11 +1,69 @@
 rules_version = '2';
 
-// Cada persona solo puede leer y escribir sus propios datos, guardados en
-// users/{su id}/... Nadie más (ni otra cuenta) puede verlos.
 service cloud.firestore {
   match /databases/{database}/documents {
+
+    // Cuenta personal: cada persona solo puede leer y escribir lo suyo, en
+    // users/{su id}/... Nadie más (ni su pareja) puede verlo.
     match /users/{userId}/{document=**} {
       allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // Invitaciones de pareja: el código es el id del documento.
+    match /invitations/{code} {
+      // Con el código (y sesión iniciada) se puede leer esa invitación.
+      allow get: if request.auth != null;
+      // Listar solo las propias: las que creé o a las que pedí unirme.
+      allow list: if request.auth != null
+        && (resource.data.from == request.auth.uid
+            || resource.data.joinerUid == request.auth.uid);
+      allow create: if request.auth != null
+        && request.resource.data.from == request.auth.uid
+        && request.resource.data.status == 'pending';
+      allow update: if request.auth != null && (
+        // Quien invitó: anularla, aceptar o rechazar.
+        resource.data.from == request.auth.uid
+        // Quien tiene el código: pedir unirse, una sola vez y sin vencer.
+        || (resource.data.status == 'pending'
+            && resource.data.expiresAt > request.time
+            && request.resource.data.status == 'requested'
+            && request.resource.data.joinerUid == request.auth.uid
+            && request.resource.data.from == resource.data.from)
+        // Quien se unió: marcar que ya trajo sus sueldos y pagos fijos.
+        || (resource.data.joinerUid == request.auth.uid
+            && request.resource.data.diff(resource.data).affectedKeys()
+                .hasOnly(['joinerCopied']))
+      );
+    }
+
+    function couple(coupleId) {
+      return get(/databases/$(database)/documents/couples/$(coupleId)).data;
+    }
+
+    // Cuenta de pareja: solo sus dos miembros la ven.
+    match /couples/{coupleId} {
+      allow read: if request.auth != null
+        && request.auth.uid in resource.data.members;
+      // La crea quien invitó, con los dos miembros.
+      allow create: if request.auth != null
+        && request.resource.data.members.size() == 2
+        && request.resource.data.members[0] == request.auth.uid;
+      // Después solo se puede terminar y anotar con cuánto se queda cada uno.
+      allow update: if request.auth != null
+        && request.auth.uid in resource.data.members
+        && request.resource.data.members == resource.data.members
+        && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['endedAt', 'endedBy', 'keep']);
+
+      // Gastos, ingresos, metas, etc. de la pareja. Al terminar la pareja
+      // quedan solo para ver.
+      match /{document=**} {
+        allow read: if request.auth != null
+          && request.auth.uid in couple(coupleId).members;
+        allow write: if request.auth != null
+          && request.auth.uid in couple(coupleId).members
+          && couple(coupleId).get('endedAt', null) == null;
+      }
     }
   }
 }
