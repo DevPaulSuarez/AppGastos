@@ -131,10 +131,10 @@ class _YearPageState extends State<YearPage> {
         _Card(
           title: 'Totales de $year',
           children: [
-            _row('Ingresos', totalIncome, color: incomeColor),
-            _row('Gastos', -spent, color: expenseColor),
+            _row('Ingresos', totalIncome, color: context.money.income),
+            _row('Gastos', -spent, color: context.money.expense),
             if (saved != 0)
-              _row('Apartado en ahorro y metas', -saved, color: savingsColor),
+              _row('Apartado en ahorro y metas', -saved, color: context.money.savings),
             if (lent != 0)
               _row(
                 lent > 0 ? 'Prestado (por cobrar)' : 'Les devolvieron',
@@ -145,7 +145,7 @@ class _YearPageState extends State<YearPage> {
               'Sobrante del año',
               leftover,
               bold: true,
-              color: leftover < 0 ? expenseColor : incomeColor,
+              color: leftover < 0 ? context.money.expense : context.money.income,
             ),
           ],
         ),
@@ -200,12 +200,12 @@ class _YearPageState extends State<YearPage> {
             _row(
               'Apartado en ahorro y metas',
               accumulated.saved,
-              color: savingsColor,
+              color: context.money.savings,
             ),
             _row(
               'Libre',
               accumulated.free,
-              color: accumulated.free < 0 ? expenseColor : incomeColor,
+              color: accumulated.free < 0 ? context.money.expense : context.money.income,
             ),
             const SizedBox(height: 4),
             Text(
@@ -263,7 +263,7 @@ class _YearPageState extends State<YearPage> {
                           money(left),
                           style: TextStyle(
                             fontWeight: FontWeight.w700,
-                            color: left < 0 ? expenseColor : incomeColor,
+                            color: left < 0 ? context.money.expense : context.money.income,
                           ),
                         ),
                       ],
@@ -309,7 +309,7 @@ class _YearPageState extends State<YearPage> {
             child: LinearProgressIndicator(
               value: progress.clamp(0.0, 1.0),
               minHeight: 6,
-              color: progress >= 1 ? warningColor : savingsColor,
+              color: progress >= 1 ? context.money.warning : context.money.savings,
               backgroundColor: Theme.of(
                 context,
               ).colorScheme.surfaceContainerHighest,

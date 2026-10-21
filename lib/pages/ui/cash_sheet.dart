@@ -195,7 +195,7 @@ class _MonthCash extends StatelessWidget {
                 style: TextStyle(
                   fontSize: 34,
                   fontWeight: FontWeight.w800,
-                  color: end.free < 0 ? expenseColor : null,
+                  color: end.free < 0 ? context.money.expense : null,
                 ),
               ),
             ),
@@ -216,18 +216,18 @@ class _MonthCash extends StatelessWidget {
             row(
               '+ Entró este mes',
               money(end.income - start.income),
-              color: incomeColor,
+              color: context.money.income,
             ),
             row(
               '− Se gastó este mes',
               money(end.spent - start.spent),
-              color: expenseColor,
+              color: context.money.expense,
             ),
             if (end.saved - start.saved > 0.004)
               row(
                 '− Se apartó para ahorro',
                 money(end.saved - start.saved),
-                color: savingsColor,
+                color: context.money.savings,
               ),
             const Divider(),
             row('= Disponible', money(end.free), bold: true),
@@ -235,13 +235,13 @@ class _MonthCash extends StatelessWidget {
               row(
                 solo ? 'Además tienes ahorrado' : 'Además tienen ahorrado',
                 money(end.saved),
-                color: savingsColor,
+                color: context.money.savings,
               ),
             if (end.receivable > 0)
               row(
                 solo ? 'Y te deben' : 'Y les deben',
                 money(end.receivable),
-                color: warningColor,
+                color: context.money.warning,
                 hint: 'Préstamos que todavía no devuelven',
               ),
 
@@ -318,7 +318,7 @@ class _MonthCash extends StatelessWidget {
             child: LinearProgressIndicator(
               value: progress.clamp(0.0, 1.0),
               minHeight: 6,
-              color: progress >= 1 ? warningColor : savingsColor,
+              color: progress >= 1 ? context.money.warning : context.money.savings,
               backgroundColor: scheme.surfaceContainerHighest,
             ),
           ),
@@ -369,7 +369,7 @@ class _MonthCash extends StatelessWidget {
       builder: (context) => AlertDialog(
         icon: Icon(
           matches ? Icons.check_circle : Icons.compare_arrows,
-          color: matches ? incomeColor : warningColor,
+          color: matches ? context.money.income : context.money.warning,
           size: 40,
         ),
         title: Text(matches ? '¡Coincide!' : 'No coincide'),

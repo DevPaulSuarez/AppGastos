@@ -228,6 +228,22 @@ class FinanceRepository {
     }
   }
 
+  /// Pasa los gastos, fijos y presupuestos de las categorías que la app ya
+  /// no trae a su reemplazo (ej. "Alcohol" → "Ocio"). Una sola vez por
+  /// cuenta; no toca una categoría que la persona creó con ese nombre.
+  Future<void> moveRetiredCategories() async {
+    const id = 'migrations';
+    final done = await store.get(_settings, id);
+    if (((done?.data['categories'] as num?) ?? 0) >= 2) return;
+    final custom = (await watchCategorySettings().first).custom
+        .map((c) => c.name)
+        .toSet();
+    for (final e in retiredCategories.entries) {
+      if (!custom.contains(e.key)) await renameCategory(e.key, e.value);
+    }
+    await store.set(_settings, id, {...?done?.data, 'categories': 2});
+  }
+
   // Ingresos
 
   Stream<List<Income>> _incomesWhere(Map<String, Object?> where) {

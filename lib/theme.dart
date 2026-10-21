@@ -1,11 +1,66 @@
 import 'package:flutter/material.dart';
 
-/// Colores con significado. Siempre van acompañados de un texto o ícono, para
-/// no depender solo del color.
-const incomeColor = Color(0xFF16A34A);
-const expenseColor = Color(0xFFDC2626);
-const savingsColor = Color(0xFF2563EB);
-const warningColor = Color(0xFFEA580C);
+/// Colores con significado (ingreso, gasto, ahorro, aviso). Siempre van con
+/// un texto o ícono, para no depender solo del color. Hay una versión para
+/// modo claro y otra para modo oscuro, más suave para que no encandile.
+@immutable
+class MoneyColors extends ThemeExtension<MoneyColors> {
+  final Color income;
+  final Color expense;
+  final Color savings;
+  final Color warning;
+
+  const MoneyColors({
+    required this.income,
+    required this.expense,
+    required this.savings,
+    required this.warning,
+  });
+
+  static const light = MoneyColors(
+    income: Color(0xFF2E8B57),
+    expense: Color(0xFFC94A4A),
+    savings: Color(0xFF3B6FD8),
+    warning: Color(0xFFC96A12),
+  );
+
+  static const dark = MoneyColors(
+    income: Color(0xFF8FD3A8),
+    expense: Color(0xFFF0A29B),
+    savings: Color(0xFFA3C0F5),
+    warning: Color(0xFFF2BB80),
+  );
+
+  @override
+  MoneyColors copyWith({
+    Color? income,
+    Color? expense,
+    Color? savings,
+    Color? warning,
+  }) => MoneyColors(
+    income: income ?? this.income,
+    expense: expense ?? this.expense,
+    savings: savings ?? this.savings,
+    warning: warning ?? this.warning,
+  );
+
+  @override
+  MoneyColors lerp(MoneyColors? other, double t) {
+    if (other == null) return this;
+    return MoneyColors(
+      income: Color.lerp(income, other.income, t)!,
+      expense: Color.lerp(expense, other.expense, t)!,
+      savings: Color.lerp(savings, other.savings, t)!,
+      warning: Color.lerp(warning, other.warning, t)!,
+    );
+  }
+}
+
+extension MoneyColorsOf on BuildContext {
+  /// Colores de ingreso, gasto, ahorro y aviso del tema actual.
+  MoneyColors get money =>
+      Theme.of(this).extension<MoneyColors>() ?? MoneyColors.light;
+}
 
 const _seed = Color(0xFF059669);
 
@@ -14,6 +69,9 @@ ThemeData buildTheme(Brightness brightness) {
 
   return ThemeData(
     useMaterial3: true,
+    extensions: [
+      brightness == Brightness.dark ? MoneyColors.dark : MoneyColors.light,
+    ],
     colorScheme: scheme,
     scaffoldBackgroundColor: scheme.surface,
     appBarTheme: AppBarTheme(

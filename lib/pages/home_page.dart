@@ -77,6 +77,11 @@ class _InicioState extends State<Inicio> {
 
     // Registra los sueldos y gastos fijos del mes si todavía no están.
     Provider.of<FinanceRepository>(context, listen: false).applyRecurring();
+    // Gastos en categorías que la app ya no trae pasan a las nuevas.
+    Provider.of<FinanceRepository>(
+      context,
+      listen: false,
+    ).moveRetiredCategories();
 
     DateTime? first(Iterable<DateTime> months) =>
         months.isEmpty ? null : months.reduce((a, b) => a.isBefore(b) ? a : b);
@@ -366,7 +371,7 @@ class _InicioState extends State<Inicio> {
       visualDensity: VisualDensity.compact,
       icon: Icon(
         danger ? Icons.error : Icons.speed,
-        color: danger ? expenseColor : warningColor,
+        color: danger ? context.money.expense : context.money.warning,
       ),
       onPressed: _showAlert ? _hideAlert : _revealAlert,
     );

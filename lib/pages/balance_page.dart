@@ -186,7 +186,7 @@ class BalancePage extends StatelessWidget {
             _row(
               'Ingresos',
               totalIncomes,
-              color: incomeColor,
+              color: context.money.income,
               onTap: () => _showIncomes(context, 'Ingresos de $monthName', [
                 ...incomes,
               ], people),
@@ -194,7 +194,7 @@ class BalancePage extends StatelessWidget {
             _row(
               'Gastos',
               -spent,
-              color: expenseColor,
+              color: context.money.expense,
               onTap: () => _showExpenses(
                 context,
                 'Gastos de $monthName',
@@ -203,7 +203,7 @@ class BalancePage extends StatelessWidget {
               ),
             ),
             if (saved != 0)
-              _row('Separado para ahorro', -saved, color: savingsColor),
+              _row('Separado para ahorro', -saved, color: context.money.savings),
             if (lent != 0)
               _row(
                 lent > 0 ? 'Prestado (por cobrar)' : 'Te devolvieron préstamos',
@@ -214,14 +214,14 @@ class BalancePage extends StatelessWidget {
               'Sobrante del mes',
               leftover,
               bold: true,
-              color: leftover < 0 ? expenseColor : incomeColor,
+              color: leftover < 0 ? context.money.expense : context.money.income,
             ),
             if (leftover < 0)
-              const Padding(
+              Padding(
                 padding: EdgeInsets.only(top: 8.0),
                 child: Text(
                   'Este mes se gastó más de lo que entró.',
-                  style: TextStyle(color: expenseColor),
+                  style: TextStyle(color: context.money.expense),
                 ),
               ),
           ],
@@ -238,12 +238,12 @@ class BalancePage extends StatelessWidget {
             children: [
               SizedBox(height: 180, child: TrendChart(months: trend)),
               const SizedBox(height: 12),
-              const Row(
+              Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  _Legend(color: incomeColor, label: 'Ingresos'),
+                  _Legend(color: context.money.income, label: 'Ingresos'),
                   SizedBox(width: 24),
-                  _Legend(color: expenseColor, label: 'Gastos'),
+                  _Legend(color: context.money.expense, label: 'Gastos'),
                 ],
               ),
             ],
@@ -257,10 +257,10 @@ class BalancePage extends StatelessWidget {
               '${incomes.length == 1 ? 'ingreso' : 'ingresos'}',
           total: Text(
             money(totalIncomes),
-            style: const TextStyle(
+            style: TextStyle(
               fontWeight: FontWeight.w800,
               fontSize: 15,
-              color: incomeColor,
+              color: context.money.income,
             ),
           ),
           children: [
@@ -275,7 +275,7 @@ class BalancePage extends StatelessWidget {
             for (final income in incomes)
               ListTile(
                 contentPadding: EdgeInsets.zero,
-                leading: const Icon(Icons.payments, color: incomeColor),
+                leading: Icon(Icons.payments, color: context.money.income),
                 title: Text(
                   income.description.isEmpty ? 'Ingreso' : income.description,
                 ),
@@ -563,13 +563,13 @@ class BalancePage extends StatelessWidget {
       context,
       title: title,
       total: incomes.fold(0.0, (a, i) => a + i.amount),
-      color: incomeColor,
+      color: context.money.income,
       rows: [
         for (final income in incomes)
           ListTile(
-            leading: const CircleAvatar(
+            leading: CircleAvatar(
               backgroundColor: Color(0x2216A34A),
-              child: Icon(Icons.south_west, color: incomeColor),
+              child: Icon(Icons.south_west, color: context.money.income),
             ),
             title: Text(
               income.description,
@@ -582,9 +582,9 @@ class BalancePage extends StatelessWidget {
             ),
             trailing: Text(
               '+ ${money(income.amount)}',
-              style: const TextStyle(
+              style: TextStyle(
                 fontWeight: FontWeight.w700,
-                color: incomeColor,
+                color: context.money.income,
               ),
             ),
           ),
@@ -603,7 +603,7 @@ class BalancePage extends StatelessWidget {
       context,
       title: title,
       total: expenses.fold(0.0, (a, e) => a + e.value),
-      color: expenseColor,
+      color: context.money.expense,
       rows: [
         for (final e in expenses)
           ListTile(
@@ -622,9 +622,9 @@ class BalancePage extends StatelessWidget {
             ),
             trailing: Text(
               '− ${money(e.value)}',
-              style: const TextStyle(
+              style: TextStyle(
                 fontWeight: FontWeight.w700,
-                color: expenseColor,
+                color: context.money.expense,
               ),
             ),
           ),

@@ -662,7 +662,7 @@ class _LeaveCouplePageState extends State<LeaveCouplePage> {
           ),
           const SizedBox(height: 24),
           FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: expenseColor),
+            style: FilledButton.styleFrom(backgroundColor: context.money.expense),
             onPressed: _leaving ? null : () => _leave(couple),
             child: const Text('Salir de la pareja'),
           ),

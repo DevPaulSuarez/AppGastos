@@ -299,7 +299,7 @@ class _MonthWidgetState extends State<MonthWidget> {
                       ),
                     ),
                     if (widget.saved > 0)
-                      const _Legend(color: savingsColor, label: 'Ahorro'),
+                      _Legend(color: context.money.savings, label: 'Ahorro'),
                   ],
                 ),
               ),
@@ -376,7 +376,7 @@ class _MonthWidgetState extends State<MonthWidget> {
                       ? 'Te pasaste ${money(value - budget)}'
                       : 'Quedan ${money(budget - value)} de ${money(budget)}',
                   style: TextStyle(
-                    color: overBudget ? expenseColor : null,
+                    color: overBudget ? context.money.expense : null,
                     fontWeight: overBudget ? FontWeight.w600 : null,
                   ),
                 ),
@@ -387,8 +387,8 @@ class _MonthWidgetState extends State<MonthWidget> {
                     value: (value / budget).clamp(0.0, 1.0),
                     minHeight: 6,
                     color: overBudget
-                        ? expenseColor
-                        : (value > budget * 0.8 ? warningColor : incomeColor),
+                        ? context.money.expense
+                        : (value > budget * 0.8 ? context.money.warning : context.money.income),
                     backgroundColor: scheme.surfaceContainerHighest,
                   ),
                 ),
@@ -412,7 +412,7 @@ class _MonthWidgetState extends State<MonthWidget> {
 
   Widget _alertCard(SpendingAlert alert) {
     final danger = alert.level == AlertLevel.danger;
-    final color = danger ? expenseColor : warningColor;
+    final color = danger ? context.money.expense : context.money.warning;
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
@@ -505,7 +505,7 @@ class _MonthWidgetState extends State<MonthWidget> {
     Widget? action,
   }) {
     final scheme = Theme.of(context).colorScheme;
-    final color = isIncome ? incomeColor : expenseColor;
+    final color = isIncome ? context.money.income : context.money.expense;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
@@ -561,10 +561,10 @@ class _MonthWidgetState extends State<MonthWidget> {
       summary: '${items.length} ${items.length == 1 ? 'ingreso' : 'ingresos'}',
       total: Text(
         money(widget.incomes),
-        style: const TextStyle(
+        style: TextStyle(
           fontWeight: FontWeight.w800,
           fontSize: 15,
-          color: incomeColor,
+          color: context.money.income,
         ),
       ),
       children: [
@@ -602,7 +602,7 @@ class _MonthWidgetState extends State<MonthWidget> {
                 ? 'Cerca del día ${u.date.day} · ¿ya llegó?'
                 : 'Cerca del día ${u.date.day} · ¿ya se pagó?',
             dateColor: u.needsConfirm && today > u.date.day
-                ? warningColor
+                ? context.money.warning
                 : null,
             amount: u.amount,
             action: u.needsConfirm

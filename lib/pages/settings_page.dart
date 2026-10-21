@@ -251,10 +251,10 @@ class _SettingsPageState extends State<SettingsPage> {
                   ),
                 ),
                 ListTile(
-                  leading: const Icon(Icons.logout, color: expenseColor),
-                  title: const Text(
+                  leading: Icon(Icons.logout, color: context.money.expense),
+                  title: Text(
                     'Cerrar sesión',
-                    style: TextStyle(color: expenseColor),
+                    style: TextStyle(color: context.money.expense),
                   ),
                   onTap: () async {
                     if (await confirmDialog(
@@ -335,10 +335,10 @@ class _SettingsPageState extends State<SettingsPage> {
           ),
         ),
         ListTile(
-          leading: const Icon(Icons.logout, color: expenseColor),
-          title: const Text(
+          leading: Icon(Icons.logout, color: context.money.expense),
+          title: Text(
             'Salir de la pareja',
-            style: TextStyle(color: expenseColor),
+            style: TextStyle(color: context.money.expense),
           ),
           onTap: () => Navigator.of(context).pushNamed('/leave'),
         ),
@@ -525,10 +525,10 @@ class _SettingsPageState extends State<SettingsPage> {
           ? _addAllowance(context, finance, people, existing: item)
           : _editRecurring(context, finance, people, item.type, existing: item),
       leading: switch (item.type) {
-        RecurringType.income => const Icon(Icons.payments, color: incomeColor),
-        RecurringType.expense => const Icon(
+        RecurringType.income => Icon(Icons.payments, color: context.money.income),
+        RecurringType.expense => Icon(
           Icons.event_repeat,
-          color: expenseColor,
+          color: context.money.expense,
         ),
         RecurringType.allowance => CategoryAvatar(propinaCategory, size: 36),
       },
@@ -840,10 +840,10 @@ class _Section extends StatelessWidget {
         children: [
           Text(
             title,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 16.0,
               fontWeight: FontWeight.bold,
-              color: incomeColor,
+              color: context.money.income,
             ),
           ),
           if (hint != null)
