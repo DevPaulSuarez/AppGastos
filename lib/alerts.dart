@@ -24,6 +24,9 @@ class SpendingAlert {
 ///
 /// [fixedSpent] son los gastos fijos y propinas ya registrados: no se usan
 /// para calcular el ritmo, porque se pagan una vez y no se repiten.
+/// [carriedOver] es el dinero libre que traían al empezar el mes: también se
+/// puede gastar, así que cuenta para lo que les queda (como en la tarjeta
+/// verde).
 SpendingAlert? spendingAlert({
   required double income,
   required double spent,
@@ -31,9 +34,10 @@ SpendingAlert? spendingAlert({
   required double fixedSpent,
   required int day,
   required int daysInMonth,
+  double carriedOver = 0,
 }) {
   if (income <= 0) return null;
-  final leftover = income - spent - saved;
+  final leftover = carriedOver + income - spent - saved;
   final limit = income * minLeftoverRatio;
   final daysLeft = daysInMonth - day + 1; // incluye hoy
   final percentLeft = (leftover / income * 100).round();
@@ -43,8 +47,11 @@ SpendingAlert? spendingAlert({
       return SpendingAlert(
         AlertLevel.danger,
         '¡Están en rojo!',
-        'Este mes ya gastaron ${money(-leftover)} más de lo que ingresó. '
-            'Eviten gastos que no sean necesarios.',
+        carriedOver > 0
+            ? 'Ya gastaron ${money(-leftover)} más de lo que tenían. '
+                  'Eviten gastos que no sean necesarios.'
+            : 'Este mes ya gastaron ${money(-leftover)} más de lo que '
+                  'ingresó. Eviten gastos que no sean necesarios.',
       );
     }
     return SpendingAlert(
@@ -59,7 +66,7 @@ SpendingAlert? spendingAlert({
   if (day < _paceFromDay || day >= daysInMonth) return null;
   final variable = (spent - fixedSpent).clamp(0, double.infinity);
   final projectedSpent = fixedSpent + variable / day * daysInMonth;
-  final projectedLeftover = income - projectedSpent - saved;
+  final projectedLeftover = carriedOver + income - projectedSpent - saved;
   if (projectedLeftover > limit) return null;
 
   final usedPercent = ((spent + saved) / income * 100).round();
@@ -78,11 +85,19 @@ SpendingAlert? spendingAlert({
 /// Alerta del mes [month]/[year] según sus movimientos, o null si no es el
 /// mes en curso o va todo bien.
 ///
-/// [pendingPayments] son gastos de fecha variable que aún no pagan (ej. el
-/// alquiler): ya están comprometidos, así que cuentan como gastados.
+/// [pendingPayments] son los fijos y propinas que aún faltan pagar este mes
+/// (ej. el alquiler del 25): ya están comprometidos, así que cuentan como
+/// gastados. [pendingIncome] son los sueldos que aún no llegan; cuentan como
+/// ingreso, así la alerta mira cómo cerrará el mes y no solo lo de hoy.
 SpendingAlert? monthAlert(
-    List<Expense> expenses, double income, int month, int year,
-    {double pendingPayments = 0}) {
+  List<Expense> expenses,
+  double income,
+  int month,
+  int year, {
+  double pendingPayments = 0,
+  double pendingIncome = 0,
+  double carriedOver = 0,
+}) {
   final now = DateTime.now();
   if (now.month != month || now.year != year) return null;
   final spending = expenses.where((e) => isSpendingCategory(e.category));
@@ -92,15 +107,16 @@ SpendingAlert? monthAlert(
       .where((e) => e.category == prestamoCategory)
       .fold(0.0, (a, e) => a + e.value);
   return spendingAlert(
-    income: income,
+    income: income + pendingIncome,
+    carriedOver: carriedOver,
     spent: spending.fold(0.0, (a, e) => a + e.value) + lent + pendingPayments,
     saved: expenses
         .where((e) => e.category == ahorroCategory)
         .fold(0.0, (a, e) => a + e.value),
     fixedSpent:
         spending.where(isFixedExpense).fold(0.0, (a, e) => a + e.value) +
-            lent +
-            pendingPayments,
+        lent +
+        pendingPayments,
     day: now.day,
     daysInMonth: DateTime(year, month + 1, 0).day,
   );

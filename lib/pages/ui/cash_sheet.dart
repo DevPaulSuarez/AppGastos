@@ -96,6 +96,7 @@ class _MonthCash extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final solo = people.length < 2;
     final monthName = monthNames[month - 1];
     final label = '${monthName[0]}${monthName.substring(1).toLowerCase()}';
     final start = cashSummaryUntil(
@@ -168,8 +169,7 @@ class _MonthCash extends StatelessWidget {
     );
 
     final monthSavings = expenses.where(
-      (e) =>
-          e.category == ahorroCategory && e.month == month && e.year == year,
+      (e) => e.category == ahorroCategory && e.month == month && e.year == year,
     );
 
     return SafeArea(
@@ -180,74 +180,69 @@ class _MonthCash extends StatelessWidget {
           children: [
             Text(
               _isCurrent
-                  ? '¿Cuánto deberían tener hoy?'
-                  : '¿Cuánto tenían al terminar $label?',
+                  ? (solo ? 'Tu dinero hoy' : 'Su dinero hoy')
+                  : (solo
+                        ? 'Tu dinero al terminar $label'
+                        : 'Su dinero al terminar $label'),
               style: Theme.of(
                 context,
               ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
             ),
-            const SizedBox(height: 4),
-            Text(
-              'Entre bancos y efectivo, según lo registrado en $label $year.',
-              style: TextStyle(color: scheme.onSurfaceVariant),
-            ),
             const SizedBox(height: 12),
             Center(
               child: Text(
-                money(end.total),
+                money(end.free),
                 style: TextStyle(
                   fontSize: 34,
                   fontWeight: FontWeight.w800,
-                  color: end.total < 0 ? expenseColor : null,
+                  color: end.free < 0 ? expenseColor : null,
                 ),
               ),
             ),
-
-            section('El mes de $label'),
+            Center(
+              child: Text(
+                'disponible para gastar',
+                style: TextStyle(color: scheme.onSurfaceVariant),
+              ),
+            ),
+            const SizedBox(height: 8),
             row(
-              'Al empezar el mes tenían',
-              money(start.total),
+              solo ? 'Al empezar el mes tenías' : 'Al empezar el mes tenían',
+              money(start.free),
               hint: check == null
-                  ? 'Aún no comparan con sus cuentas: parte de 0'
+                  ? 'Todavía no se indicó cuánto había al empezar: parte de 0'
                   : null,
             ),
             row(
-              '+ Les entró este mes',
+              '+ Entró este mes',
               money(end.income - start.income),
               color: incomeColor,
             ),
             row(
-              '− Pagaron este mes',
+              '− Se gastó este mes',
               money(end.spent - start.spent),
               color: expenseColor,
-              hint: 'Gastos y préstamos. Lo que apartaron como ahorro sigue '
-                  'siendo suyo.',
             ),
-            const Divider(),
-            row(
-              _isCurrent ? '= Deberían tener hoy' : '= Al terminar el mes',
-              money(end.total),
-              bold: true,
-            ),
-
-            section('Por persona'),
-            for (var i = 0; i < people.length; i++)
+            if (end.saved - start.saved > 0.004)
               row(
-                people[i],
-                money(end.people[i].total),
-                hint:
-                    'Empezó con ${money(start.people[i].total)} · '
-                    'entró ${money(end.people[i].income - start.people[i].income)} · '
-                    'pagó ${money(end.people[i].spent - start.people[i].spent)}',
+                '− Se apartó para ahorro',
+                money(end.saved - start.saved),
+                color: savingsColor,
+              ),
+            const Divider(),
+            row('= Disponible', money(end.free), bold: true),
+            if (end.saved > 0.004)
+              row(
+                solo ? 'Además tienes ahorrado' : 'Además tienen ahorrado',
+                money(end.saved),
+                color: savingsColor,
               ),
             if (end.receivable > 0)
-              Padding(
-                padding: const EdgeInsets.only(top: 8),
-                child: Text(
-                  'Además les deben ${money(end.receivable)} por préstamos '
-                  '(no está en sus cuentas todavía).',
-                  style: const TextStyle(fontSize: 13, color: warningColor),
-                ),
+              row(
+                solo ? 'Y te deben' : 'Y les deben',
+                money(end.receivable),
+                color: warningColor,
+                hint: 'Préstamos que todavía no devuelven',
               ),
 
             if (_isCurrent) ...[
@@ -255,20 +250,14 @@ class _MonthCash extends StatelessWidget {
               FilledButton.icon(
                 icon: const Icon(Icons.account_balance),
                 label: Text(
-                  check == null
-                      ? 'Indicar cuánto tenemos hoy'
-                      : 'Comparar con nuestras cuentas',
+                  solo ? 'Comparar con mi banco' : 'Comparar con nuestro banco',
                 ),
                 onPressed: () => _compare(context, end),
               ),
               const SizedBox(height: 6),
               Text(
-                check == null
-                    ? 'Cada uno escribe cuánto tiene hoy (bancos + efectivo). '
-                          'Eso será el punto de partida.'
-                    : 'Cada uno escribe cuánto tiene hoy y la app les dice '
-                          'si coincide con lo registrado. Última comparación: '
-                          '${check!.date.day}/${check!.date.month}/${check!.date.year}.',
+                'Escribe cuánto hay de verdad (banco + efectivo) y la app te '
+                'dice si coincide.',
                 textAlign: TextAlign.center,
                 style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
               ),
@@ -346,58 +335,35 @@ class _MonthCash extends StatelessWidget {
   }
 
   Future<void> _compare(BuildContext context, CashSummary today) async {
+    final solo = people.length < 2;
     final values = await showFieldsDialog(
       context,
-      title: '¿Cuánto tiene cada uno hoy?',
-      confirm: check == null ? 'Guardar' : 'Comparar',
-      hint:
-          'Sumen bancos y efectivo de cada uno. Lo que les deben no se '
-          'cuenta.',
+      title: solo ? '¿Cuánto tienes hoy?' : '¿Cuánto tienen hoy?',
+      confirm: 'Comparar',
+      hint: 'Suma el banco y el efectivo, incluido lo que tienes ahorrado.',
       fields: [
-        for (final name in people)
-          DialogField('$name (bancos + efectivo)', initial: '0', number: true),
+        DialogField(
+          'Banco + efectivo',
+          initial: today.total.toStringAsFixed(2),
+          number: true,
+        ),
       ],
     );
     if (values == null || !context.mounted) return;
-    final real = [for (final v in values) parseAmount(v)!];
+    final total = parseAmount(values[0])!;
+    // Manejan un solo fondo: todo va en la primera persona.
+    final real = [total, for (var i = 1; i < people.length; i++) 0.0];
 
     // Se ajusta con lo registrado hasta hoy (lo de días futuros aún no pasó).
-    bool upToToday(int y, int m, int d) =>
-        !DateTime(y, m, d).isAfter(_until);
+    bool upToToday(int y, int m, int d) => !DateTime(y, m, d).isAfter(_until);
     final reconciled = reconcile(
       incomes.where((i) => upToToday(i.year, i.month, i.day)).toList(),
       expenses.where((e) => upToToday(e.year, e.month, e.day)).toList(),
       real,
     );
 
-    // La primera vez solo se toma como punto de partida.
-    if (check == null) {
-      await finance.saveCashCheck(reconciled);
-      if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Listo: desde ahora la app parte de '
-            '${money(reconciled.realTotal)}',
-          ),
-        ),
-      );
-      return;
-    }
-
-    String line(String who, double expected, double actual) {
-      final diff = actual - expected;
-      if (diff.abs() < 0.01) return '✓ $who: coincide (${money(actual)})';
-      return '• $who tiene ${money(diff.abs())} ${diff < 0 ? 'menos' : 'más'} '
-          '(app: ${money(expected)}, real: ${money(actual)})';
-    }
-
-    final totalDiff = reconciled.realTotal - today.total;
-    final matches = [
-      for (var i = 0; i < people.length; i++)
-        (real[i] - today.people[i].total).abs() < 0.01,
-    ].every((ok) => ok);
-
+    final diff = total - today.total;
+    final matches = diff.abs() < 0.01;
     final adjust = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -408,24 +374,13 @@ class _MonthCash extends StatelessWidget {
         ),
         title: Text(matches ? '¡Coincide!' : 'No coincide'),
         content: Text(
-          [
-            for (var i = 0; i < people.length; i++)
-              line(people[i], today.people[i].total, real[i]),
-            if (!matches) ...[
-              '',
-              totalDiff < 0
-                  ? 'Entre los dos tienen ${money(-totalDiff)} menos de lo '
-                        'registrado: puede ser un gasto que no anotaron.'
-                  : totalDiff > 0
-                  ? 'Entre los dos tienen ${money(totalDiff)} más de lo '
-                        'registrado: puede ser un ingreso que no anotaron.'
-                  : 'En total coincide; solo cambia quién tiene el dinero '
-                        '(por ejemplo, uno le pasó plata al otro).',
-              '',
-              'Si encuentran lo que falta, regístrenlo. Si no, ajusten la app '
-                  'a lo real (no se crea ningún gasto ni ingreso).',
-            ],
-          ].join('\n'),
+          matches
+              ? 'La app y el banco dicen lo mismo: ${money(total)}.'
+              : 'Hay ${money(diff.abs())} ${diff < 0 ? 'menos' : 'más'} de lo '
+                    'que dice la app.\n\n'
+                    '${diff < 0 ? 'Puede ser un gasto que no se anotó.' : 'Puede ser un ingreso que no se anotó.'} '
+                    'Si lo encuentras, anótalo. Si no, ajusta la app a lo '
+                    'real (no se crea ningún gasto ni ingreso).',
         ),
         actions: [
           if (!matches)

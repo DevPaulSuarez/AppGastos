@@ -46,9 +46,7 @@ class _YearPageState extends State<YearPage> {
             IconButton(
               tooltip: 'Año siguiente',
               icon: const Icon(Icons.chevron_right),
-              onPressed: year >= now.year
-                  ? null
-                  : () => setState(() => year++),
+              onPressed: year >= now.year ? null : () => setState(() => year++),
             ),
           ],
         ),
@@ -118,6 +116,15 @@ class _YearPageState extends State<YearPage> {
       until,
     );
 
+    // Los meses de antes de empezar a usar la app no se muestran.
+    final monthsWithData = [
+      ...incomes.map((i) => i.month),
+      ...expenses.map((e) => e.month),
+    ];
+    final firstMonth = monthsWithData.isEmpty
+        ? 13
+        : monthsWithData.reduce((a, b) => a < b ? a : b);
+
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
       children: [
@@ -126,7 +133,8 @@ class _YearPageState extends State<YearPage> {
           children: [
             _row('Ingresos', totalIncome, color: incomeColor),
             _row('Gastos', -spent, color: expenseColor),
-            _row('Apartado en ahorro y metas', -saved, color: savingsColor),
+            if (saved != 0)
+              _row('Apartado en ahorro y metas', -saved, color: savingsColor),
             if (lent != 0)
               _row(
                 lent > 0 ? 'Prestado (por cobrar)' : 'Les devolvieron',
@@ -156,9 +164,7 @@ class _YearPageState extends State<YearPage> {
               ),
               _row(
                 'Ingresó',
-                sum(
-                  incomes.where((x) => x.person == i).map((x) => x.amount),
-                ),
+                sum(incomes.where((x) => x.person == i).map((x) => x.amount)),
               ),
               () {
                 final paid = sum(
@@ -223,7 +229,8 @@ class _YearPageState extends State<YearPage> {
           title: 'Mes a mes',
           children: [
             for (var m = 1; m <= 12; m++)
-              if (year < now.year || m <= now.month)
+              // Desde el primer mes con algo anotado hasta el mes en curso.
+              if ((year < now.year || m <= now.month) && m >= firstMonth)
                 () {
                   final inc = sum(
                     incomes.where((i) => i.month == m).map((i) => i.amount),
@@ -324,7 +331,8 @@ class _YearPageState extends State<YearPage> {
       child: Row(
         children: [
           Expanded(child: Text(label, style: style)),
-          Text(money(value), style: style),
+          // Los montos que restan se muestran "− S/. 10.00", no "S/. -10.00".
+          Text(value < 0 ? '− ${money(-value)}' : money(value), style: style),
         ],
       ),
     );

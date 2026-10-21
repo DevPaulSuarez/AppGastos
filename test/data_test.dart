@@ -39,31 +39,40 @@ void main() {
     expect(comida.map((e) => e.value), unorderedEquals([20, 15.5]));
   });
 
-  test('los fijos se registran una sola vez por mes', () async {
-    await finance.saveRecurring(const Recurring(
-        type: RecurringType.income,
-        person: 0,
-        description: 'Sueldo',
-        amount: 3000,
-        day: 1));
-    await finance.saveRecurring(const Recurring(
-        type: RecurringType.expense,
-        person: 1,
-        category: 'Servicios',
-        description: 'Alquiler',
-        amount: 1200,
-        day: 31));
-    await finance.applyRecurring();
-    await finance.applyRecurring();
+  test('los fijos se registran el día que tocan, una sola vez', () async {
+    final today = DateTime(2026, 10, 5);
+    await finance.saveRecurring(
+        const Recurring(
+            type: RecurringType.income,
+            person: 0,
+            description: 'Sueldo',
+            amount: 3000,
+            day: 1),
+        today: today);
+    await finance.saveRecurring(
+        const Recurring(
+            type: RecurringType.expense,
+            person: 1,
+            category: 'Servicios',
+            description: 'Alquiler',
+            amount: 1200,
+            day: 31),
+        today: today);
+    await finance.applyRecurring(today: today);
+    await finance.applyRecurring(today: today);
 
-    final incomes = await finance.watchIncomes(now.month, now.year).first;
+    final incomes = await finance.watchIncomes(10, 2026).first;
     expect(incomes.length, 1);
     expect(incomes.single.amount, 3000);
+    // El alquiler del 31 todavía no se paga.
+    expect(await expenses.queryByMonth(10, 2026).first, isEmpty);
 
-    final month = await expenses.queryByMonth(now.month, now.year).first;
+    await finance.applyRecurring(today: DateTime(2026, 10, 31));
+    await finance.applyRecurring(today: DateTime(2026, 10, 31));
+    final month = await expenses.queryByMonth(10, 2026).first;
     expect(month.length, 1);
     expect(month.single.paidBy, 1);
-    expect(month.single.day, lessThanOrEqualTo(31));
+    expect(month.single.day, 31);
   });
 
   test('los datos se conservan al reabrir la app', () async {
@@ -79,6 +88,72 @@ void main() {
         ['Ana', 'Luis']);
     expect(await FinanceRepository(reopened).watchBudgets().first,
         {'Comida': 800.0});
+  });
+
+  test('la primera vez se elige cuenta individual o de pareja', () async {
+    expect(await finance.watchSolo().first, isNull);
+
+    await finance.setSolo(true);
+    expect(await finance.watchSolo().first, isTrue);
+    expect(await finance.watchPeople().first, ['Yo']);
+
+    // El nombre de la pareja se guarda aunque la cuenta sea individual.
+    await finance.setPeople(['Ana']);
+    await finance.setSolo(false);
+    expect(await finance.watchPeople().first, ['Ana', 'Persona 2']);
+  });
+
+  test('después de elegir la cuenta sigue la configuración inicial',
+      () async {
+    expect(await finance.watchAccountStep().first, AccountStep.choose);
+    await finance.setSolo(false);
+    expect(await finance.watchAccountStep().first, AccountStep.setup);
+    await finance.finishSetup();
+    expect(await finance.watchAccountStep().first, AccountStep.ready);
+    expect(await finance.watchSolo().first, isFalse);
+  });
+
+  test('dos pagos al mes en los días elegidos', () {
+    const item = Recurring(
+      type: RecurringType.income,
+      frequency: Frequency.biweekly,
+      person: 0,
+      description: 'Sueldo',
+      amount: 1000,
+      day: 10,
+      secondDay: 25,
+      weekendShift: WeekendShift.previous,
+    );
+    // Octubre 2026: el 10 es sábado y el 25 domingo; se adelantan al viernes.
+    expect(FinanceRepository.occurrences(item, 2026, 10),
+        [DateTime(2026, 10, 9), DateTime(2026, 10, 23)]);
+    final saved = Recurring.fromMap('x', item.toMap());
+    expect((saved.day, saved.secondDay), (10, 25));
+    // Los de antes (sin segundo día) siguen siendo el 15 y el 30.
+    final old = Recurring.fromMap(
+        'y', item.toMap()..remove('secondDay')..['day'] = 15);
+    expect(FinanceRepository.occurrences(old, 2026, 11).map((d) => d.day),
+        [13, 30]);
+  });
+
+  test('quitar un fijo recién cargado borra lo que ya registró', () async {
+    await finance.saveRecurring(Recurring(
+      type: RecurringType.income,
+      person: 0,
+      description: 'Sueldo',
+      amount: 3000,
+      day: 1,
+    ));
+    final item = (await finance.watchRecurring().first).single;
+    expect(await finance.watchAllIncomes().first, isNotEmpty);
+    await finance.deleteRecurringWithRecords(item.id);
+    expect(await finance.watchRecurring().first, isEmpty);
+    expect(await finance.watchAllIncomes().first, isEmpty);
+  });
+
+  test('las cuentas de antes siguen siendo de pareja', () async {
+    await finance.setPeople(['Ana', 'Luis']);
+    expect(await finance.watchSolo().first, isFalse);
   });
 
   test('los cambios llegan a quien está escuchando', () async {
@@ -160,11 +235,157 @@ void main() {
         const Recurring(type: RecurringType.expense, person: 1,
             category: 'Vivienda', description: 'Alquiler', amount: 1100,
             day: 5));
+    // El 2 de noviembre todavía no toca (es el 5).
     await finance.applyRecurring(today: DateTime(2026, 11, 2));
+    expect((await expenses.queryAll().first).length, 1);
+    await finance.applyRecurring(today: DateTime(2026, 11, 5));
 
     final all = await expenses.queryAll().first;
     expect(all.map((e) => '${e.day}/${e.month} ${e.value} ${e.paidBy}'),
         unorderedEquals(['5/10 1100.0 1', '5/11 1100.0 1']));
+  });
+
+  test('mover un fijo a un día que no llegó lo deja por venir', () async {
+    final today = DateTime(2026, 10, 20);
+    const rent = Recurring(type: RecurringType.expense, person: 0,
+        category: 'Vivienda', description: 'Alquiler', amount: 1000, day: 1);
+    await finance.saveRecurring(rent, today: today);
+    final saved = (await finance.watchRecurring().first).single;
+    await finance.updateRecurring(
+        saved,
+        const Recurring(type: RecurringType.expense, person: 0,
+            category: 'Vivienda', description: 'Alquiler', amount: 1000,
+            day: 25),
+        today: today);
+    expect(await expenses.queryAll().first, isEmpty);
+
+    await finance.applyRecurring(today: DateTime(2026, 10, 25));
+    expect((await expenses.queryAll().first).map((e) => '${e.day}/${e.month}'),
+        ['25/10']);
+  });
+
+  test('lo que falta este mes, por fecha', () {
+    const items = [
+      Recurring(id: 's', type: RecurringType.income, person: 0,
+          description: 'Sueldo', amount: 3000, day: 30),
+      Recurring(id: 'q', type: RecurringType.income, person: 1,
+          frequency: Frequency.biweekly, description: 'Quincena',
+          amount: 1500, day: 15, secondDay: 30),
+      Recurring(id: 'a', type: RecurringType.expense, person: 0,
+          category: 'Vivienda', description: 'Alquiler', amount: 1200,
+          day: 25),
+      Recurring(id: 'l', type: RecurringType.expense, person: 0,
+          category: 'Servicios', description: 'Luz', amount: 90, day: 7,
+          confirm: true),
+      Recurring(id: 'p', type: RecurringType.allowance, person: 1,
+          description: 'Propina', amount: 100, day: 15, biweekly: true),
+    ];
+    final today = DateTime(2026, 10, 20);
+    String show(List<Upcoming> list) => list
+        .map((u) => '${u.item.description} ${u.date.day}'
+            '${u.needsConfirm ? '?' : ''}')
+        .join(', ');
+
+    expect(show(FinanceRepository.upcoming(items, {}, today)),
+        'Luz 7?, Alquiler 25, Sueldo 30, Quincena 30, Propina 30');
+    // Confirmada la luz, ya no falta.
+    expect(
+        show(FinanceRepository.upcoming(items, {'rec_l_2026-10'}, today)),
+        'Alquiler 25, Sueldo 30, Quincena 30, Propina 30');
+  });
+
+  test('compra con propina: no se cuenta dos veces', () async {
+    final day = DateTime(2026, 10, 15);
+    final incomes = [
+      const Income(id: 'i', person: 0, description: 'Sueldo', amount: 1000,
+          month: 10, year: 2026),
+    ];
+    await expenses.add(propinaCategory, 100, day, 'Propina', paidBy: 1);
+    final before = monthLeftover(
+        incomes, await expenses.queryByMonth(10, 2026).first);
+    expect(before, 900);
+
+    await expenses.addWithAllowance('Comida', 30, day, 'Almuerzo',
+        paidBy: 1, fromAllowance: 30);
+    final month = await expenses.queryByMonth(10, 2026).first;
+    // El sobrante no cambia: la propina ya estaba contada.
+    expect(monthLeftover(incomes, month), 900);
+    expect(await expenses.allowanceLeft(1, 10, 2026), 70);
+    final comida = await expenses.queryByCategory(10, 'Comida', 2026).first;
+    expect(comida.single.withAllowance, isTrue);
+    expect(comida.single.value, 30);
+    // Lo que tiene cada uno tampoco cambia.
+    expect(cashSummary(incomes, month, null, 2).people[1].spent,
+        cashSummary(incomes, [month.firstWhere((e) => e.category ==
+            propinaCategory && e.value > 0)], null, 2).people[1].spent);
+
+    // Bajar el monto baja el descuento.
+    await expenses.update(comida.single.copyWith(value: 20));
+    expect(await expenses.allowanceLeft(1, 10, 2026), 80);
+    // Subirlo no pasa de lo descontado: lo extra es gasto normal.
+    await expenses.update(comida.single.copyWith(value: 50));
+    expect(await expenses.allowanceLeft(1, 10, 2026), 80);
+
+    // Borrar la compra devuelve la propina.
+    await expenses.delete(comida.single.id);
+    expect(await expenses.allowanceLeft(1, 10, 2026), 100);
+    expect((await expenses.queryByMonth(10, 2026).first).length, 1);
+  });
+
+  test('alquiler del 5 pagado con lo del mes pasado, sueldo el 15',
+      () async {
+    const salary = Recurring(type: RecurringType.income, person: 0,
+        description: 'Sueldo', amount: 3000, day: 15);
+    const rent = Recurring(type: RecurringType.expense, person: 0,
+        category: 'Vivienda', description: 'Alquiler', amount: 1200, day: 5);
+    // Empieza a usar la app el 3 de octubre con 2000 en el banco.
+    final start = DateTime(2026, 10, 3);
+    await finance.saveRecurring(salary, today: start);
+    await finance.saveRecurring(rent, today: start);
+    await finance.setStartingMoney([2000], today: start);
+
+    Future<({double carried, double available})> on(DateTime day) async {
+      await finance.applyRecurring(today: day);
+      final incomes = await finance.watchAllIncomes().first;
+      final all = await expenses.queryAll().first;
+      final check = await finance.watchCashCheck().first;
+      final carried = cashSummaryUntil(
+          incomes, all, check, 1, DateTime(day.year, day.month, 0)).free;
+      return (
+        carried: carried,
+        available: cashSummaryUntil(incomes, all, check, 1, day).free,
+      );
+    }
+
+    // 5 de octubre: paga el alquiler con lo que traía; no queda en negativo.
+    expect(await on(DateTime(2026, 10, 5)), (carried: 2000, available: 800));
+    // 15: llega el sueldo.
+    expect(await on(DateTime(2026, 10, 15)), (carried: 2000, available: 3800));
+    // 5 de noviembre: trae lo de octubre y vuelve a pagar el alquiler.
+    expect(await on(DateTime(2026, 11, 5)), (carried: 3800, available: 2600));
+  });
+
+  test('el punto de partida descuenta lo ya registrado este mes', () async {
+    // Empieza el 20: el sueldo del 15 y el alquiler del 5 ya pasaron y ya
+    // están en los 2000 que tiene hoy.
+    final today = DateTime(2026, 10, 20);
+    await finance.saveRecurring(
+        const Recurring(type: RecurringType.income, person: 0,
+            description: 'Sueldo', amount: 3000, day: 15),
+        today: today);
+    await finance.saveRecurring(
+        const Recurring(type: RecurringType.expense, person: 0,
+            category: 'Vivienda', description: 'Alquiler', amount: 1200,
+            day: 5),
+        today: today);
+    await finance.setStartingMoney([2000], today: today);
+    final summary = cashSummaryUntil(
+        await finance.watchAllIncomes().first,
+        await expenses.queryAll().first,
+        await finance.watchCashCheck().first,
+        1,
+        today);
+    expect(summary.free, 2000);
   });
 
   test('cambiar la frecuencia de una propina no la duplica', () async {
@@ -266,6 +487,105 @@ void main() {
                 day: 25, daysInMonth: 30)
             ?.message,
         contains('S/. 200.00 más'));
+  });
+
+  test('el aviso cuenta lo que traían de antes, como la tarjeta verde', () {
+    // Este mes entró 1000 y se gastó 975: sin lo de antes, "en rojo".
+    expect(
+        spendingAlert(income: 1000, spent: 975, saved: 0, fixedSpent: 800,
+                day: 20, daysInMonth: 31)
+            ?.level,
+        AlertLevel.danger);
+    // Pero traían 800: les quedan 825, no están en rojo.
+    expect(
+        spendingAlert(income: 1000, spent: 975, saved: 0, fixedSpent: 800,
+            day: 20, daysInMonth: 31, carriedOver: 800),
+        isNull);
+  });
+
+  test('sueldo semanal agregado tarde: entran los viernes ya cobrados',
+      () async {
+    // Lo configura el martes 20 de octubre; su primer pago fue el viernes 9
+    // (por la semana del 28 de setiembre al 2 de octubre).
+    final today = DateTime(2026, 10, 20);
+    await finance.saveRecurring(
+        const Recurring(type: RecurringType.income, person: 0,
+            frequency: Frequency.weekly, description: 'Sueldo', amount: 500,
+            day: DateTime.friday),
+        today: today,
+        firstPayment: DateTime(2026, 10, 9));
+    final october = await finance.watchIncomes(10, 2026).first;
+    expect(october.map((i) => i.day).toList()..sort(), [9, 16]);
+    expect(october.fold(0.0, (a, i) => a + i.amount), 1000);
+
+    // Los siguientes viernes se anotan solos.
+    await finance.applyRecurring(today: DateTime(2026, 10, 23));
+    expect((await finance.watchIncomes(10, 2026).first).length, 3);
+  });
+
+  test('agregar el sueldo después de decir cuánto tenía no lo cuenta dos '
+      'veces', () async {
+    // El 20 dice que tiene 1000; ese dinero ya incluye los viernes 9 y 16.
+    final today = DateTime(2026, 10, 20);
+    await finance.setStartingMoney([1000], today: today);
+    await finance.saveRecurring(
+        const Recurring(type: RecurringType.income, person: 0,
+            frequency: Frequency.weekly, description: 'Sueldo', amount: 500,
+            day: DateTime.friday),
+        today: today,
+        firstPayment: DateTime(2026, 10, 9));
+    Future<double> available(DateTime day) async => cashSummaryUntil(
+            await finance.watchAllIncomes().first,
+            await expenses.queryAll().first,
+            await finance.watchCashCheck().first,
+            1,
+            day)
+        .free;
+    // Resumen muestra los 1000 cobrados, pero sigue teniendo 1000.
+    expect((await finance.watchIncomes(10, 2026).first).length, 2);
+    expect(await available(today), 1000);
+    // El viernes 23 sí es dinero nuevo.
+    await finance.applyRecurring(today: DateTime(2026, 10, 23));
+    expect(await available(DateTime(2026, 10, 23)), 1500);
+  });
+
+  test('metas: aportar de lo disponible y usar el dinero sin restar dos '
+      'veces', () async {
+    final today = DateTime(2026, 10, 20);
+    // Traía 1000 de antes y este mes cobró 500 y gastó 900: el mes solo dejó
+    // 400... pero tiene 600 disponibles para apartar.
+    await finance.setStartingMoney([1000], today: DateTime(2026, 10, 1));
+    await finance.addIncome(0, 'Sueldo', 500, 10, 2026, day: 9);
+    await expenses.add('Vivienda', 900, DateTime(2026, 10, 10), 'Alquiler',
+        paidBy: 0);
+    expect(await finance.freeMoneyToday(today: today), 600);
+
+    await expenses.add(ahorroCategory, 300, DateTime(2026, 10, 15), 'Meta',
+        paidBy: 0, goalId: 'viaje');
+    expect(await finance.freeMoneyToday(today: today), 300);
+
+    // Paga los pasajes con lo de la meta: lo disponible no cambia.
+    await expenses.useGoalMoney(
+        'viaje', 250, 'Transporte', 'Pasajes', DateTime(2026, 10, 18),
+        paidBy: 0);
+    expect(await finance.freeMoneyToday(today: today), 300);
+    final all = await expenses.queryAll().first;
+    final inGoal = all
+        .where((e) => e.goalId == 'viaje')
+        .fold(0.0, (a, e) => a + e.value);
+    expect(inGoal, 50);
+    expect(all.where((e) => e.category == 'Transporte').single.value, 250);
+
+    // Si borra el gasto de los pasajes, el dinero vuelve a la meta.
+    await expenses.delete(
+        all.firstWhere((e) => e.category == 'Transporte').id);
+    final after = await expenses.queryAll().first;
+    expect(
+        after
+            .where((e) => e.goalId == 'viaje')
+            .fold(0.0, (a, e) => a + e.value),
+        300);
+    expect(await finance.freeMoneyToday(today: today), 300);
   });
 
   test('solo se puede aportar lo que sobra', () {

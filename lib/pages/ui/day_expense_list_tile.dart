@@ -43,7 +43,10 @@ class DayExpenseListTile extends StatelessWidget {
             ),
             Text(
               month,
-              style: TextStyle(fontSize: 10, color: scheme.onSecondaryContainer),
+              style: TextStyle(
+                fontSize: 10,
+                color: scheme.onSecondaryContainer,
+              ),
             ),
           ],
         ),
@@ -54,7 +57,13 @@ class DayExpenseListTile extends StatelessWidget {
         overflow: TextOverflow.ellipsis,
         style: const TextStyle(fontWeight: FontWeight.w600),
       ),
-      subtitle: paidBy == null ? null : Text("Pagó $paidBy"),
+      subtitle: document.allowanceFor != null
+          ? const Text('Se descuenta de la propina (ya contada)')
+          : document.withAllowance
+          ? Text(paidBy == null ? 'Con propina' : 'Con propina de $paidBy')
+          : paidBy == null
+          ? null
+          : Text("Pagó $paidBy"),
       trailing: Text(
         money(document.value),
         style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16),

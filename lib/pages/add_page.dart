@@ -1,11 +1,13 @@
+import 'dart:math';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:primera_app_curso/cash.dart';
 import 'package:primera_app_curso/categories.dart';
 import 'package:primera_app_curso/currency.dart';
 import 'package:primera_app_curso/category_select_widget.dart';
 import 'package:primera_app_curso/expenses_repository.dart';
 import 'package:primera_app_curso/finance_repository.dart';
+import 'package:primera_app_curso/models.dart';
 import 'package:primera_app_curso/pages/ui/dialogs.dart';
 import 'package:primera_app_curso/utils.dart';
 import 'package:provider/provider.dart';
@@ -39,8 +41,23 @@ class _AddPageState extends State<AddPage> with SingleTickerProviderStateMixin {
   late final Stream<List<String>> _people;
 
   double get value => parseAmount(input) ?? 0;
+
   /// true: se registra un ingreso (por ejemplo, el pago de un cliente).
   bool isIncome = false;
+
+  /// Compra pagada con la propina de quien pagó (no se cuenta dos veces).
+  bool withAllowance = false;
+
+  /// Si alguien tiene propina configurada (si no, no se ofrece la opción).
+  bool _hasAllowances = false;
+
+  /// La opción "con propina" tiene sentido solo para gastos normales.
+  bool get _allowanceApplies =>
+      !isIncome &&
+      owedBy == null &&
+      category != null &&
+      isSpendingCategory(category!) &&
+      category != propinaCategory;
 
   bool get _canSave =>
       value > 0 && (isIncome || category != null || owedBy != null);
@@ -57,11 +74,14 @@ class _AddPageState extends State<AddPage> with SingleTickerProviderStateMixin {
     );
 
     _buttonAnimation = CurvedAnimation(
-        parent: _controller, curve: Curves.easeOutCubic);
+      parent: _controller,
+      curve: Curves.easeOutCubic,
+    );
 
     _pageAnimation = CurvedAnimation(
-        parent: _controller,
-        curve: const Interval(0.0, 0.85, curve: Curves.easeOutCubic));
+      parent: _controller,
+      curve: const Interval(0.0, 0.85, curve: Curves.easeOutCubic),
+    );
 
     _controller.addListener(() {
       setState(() {});
@@ -75,8 +95,17 @@ class _AddPageState extends State<AddPage> with SingleTickerProviderStateMixin {
 
     _controller.forward();
 
-    _people =
-        Provider.of<FinanceRepository>(context, listen: false).watchPeople();
+    _people = Provider.of<FinanceRepository>(
+      context,
+      listen: false,
+    ).watchPeople();
+    Provider.of<FinanceRepository>(
+      context,
+      listen: false,
+    ).watchRecurring().first.then((items) {
+      final has = items.any((r) => r.type == RecurringType.allowance);
+      if (has && mounted) setState(() => _hasAllowances = true);
+    });
     SharedPreferences.getInstance().then((prefs) {
       final lastPayer = prefs.getInt('last_payer');
       if (lastPayer != null && mounted) setState(() => payer = lastPayer);
@@ -115,9 +144,7 @@ class _AddPageState extends State<AddPage> with SingleTickerProviderStateMixin {
       context,
       title: isIncome ? '¿De dónde vino?' : '¿En qué gastaste?',
       confirm: 'Listo',
-      fields: [
-        DialogField('Nota (opcional)', initial: detalle ?? ''),
-      ],
+      fields: [DialogField('Nota (opcional)', initial: detalle ?? '')],
     );
     if (values != null) setState(() => detalle = values[0]);
   }
@@ -139,9 +166,7 @@ class _AddPageState extends State<AddPage> with SingleTickerProviderStateMixin {
               ),
               title: SegmentedButton<bool>(
                 showSelectedIcon: false,
-                style: const ButtonStyle(
-                  visualDensity: VisualDensity.compact,
-                ),
+                style: const ButtonStyle(visualDensity: VisualDensity.compact),
                 segments: const [
                   ButtonSegment(value: false, label: Text('Gasto')),
                   ButtonSegment(value: true, label: Text('Ingreso')),
@@ -178,7 +203,11 @@ class _AddPageState extends State<AddPage> with SingleTickerProviderStateMixin {
           alignment: WrapAlignment.center,
           crossAxisAlignment: WrapCrossAlignment.center,
           spacing: 4,
-          children: [_noteButton(), if (!isIncome) _loanChip()],
+          children: [
+            _noteButton(),
+            if (!isIncome) _loanChip(),
+            if (_hasAllowances && !isIncome && owedBy == null) _allowanceChip(),
+          ],
         ),
         if (isIncome)
           _incomeHint()
@@ -229,10 +258,10 @@ class _AddPageState extends State<AddPage> with SingleTickerProviderStateMixin {
     return TextButton.icon(
       icon: Icon(hasNote ? Icons.edit_note : Icons.note_add_outlined),
       label: Text(
-          hasNote
-              ? detalle!
-              : (isIncome ? 'Cliente o trabajo' : 'Agregar nota'),
-          maxLines: 1, overflow: TextOverflow.ellipsis),
+        hasNote ? detalle! : (isIncome ? 'Cliente o trabajo' : 'Agregar nota'),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
       onPressed: _editNote,
     );
   }
@@ -254,12 +283,25 @@ class _AddPageState extends State<AddPage> with SingleTickerProviderStateMixin {
     );
   }
 
+  Widget _allowanceChip() {
+    return FilterChip(
+      avatar: withAllowance ? null : const Icon(Icons.redeem, size: 18),
+      label: const Text('Pagado con propina'),
+      selected: withAllowance,
+      tooltip:
+          'La propina ya se contó al entregarla; este gasto no se suma '
+          'otra vez',
+      onSelected: (value) => setState(() => withAllowance = value),
+    );
+  }
+
   Future<void> _askOwedBy() async {
     final values = await showFieldsDialog(
       context,
       title: '¿Quién te lo devolverá?',
       confirm: 'Listo',
-      hint: 'No se cuenta como gasto suyo: queda "por cobrar" hasta que te '
+      hint:
+          'No se cuenta como gasto suyo: queda "por cobrar" hasta que te '
           'lo pague.',
       fields: [DialogField('Nombre (ej. Mi hermana)', initial: owedBy ?? '')],
       validate: (values) =>
@@ -273,13 +315,22 @@ class _AddPageState extends State<AddPage> with SingleTickerProviderStateMixin {
       stream: _people,
       builder: (context, snapshot) {
         final people = snapshot.data ?? FinanceRepository.defaultPeople;
+        // En cuenta individual siempre paga la misma persona (aunque antes,
+        // en pareja, el último registro lo hubiera pagado la otra).
+        if (people.length < 2) {
+          payer = 0;
+          return const SizedBox.shrink();
+        }
         return Padding(
           padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
           child: Row(
             children: [
-              Text(isIncome ? 'Recibió' : 'Pagó',
-                  style: TextStyle(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant)),
+              Text(
+                isIncome ? 'Recibió' : 'Pagó',
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+              ),
               const SizedBox(width: 12),
               Expanded(
                 child: SegmentedButton<int>(
@@ -288,8 +339,11 @@ class _AddPageState extends State<AddPage> with SingleTickerProviderStateMixin {
                     for (var i = 0; i < people.length; i++)
                       ButtonSegment(
                         value: i,
-                        label: Text(people[i],
-                            maxLines: 1, overflow: TextOverflow.ellipsis),
+                        label: Text(
+                          people[i],
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       ),
                   ],
                   selected: {payer},
@@ -352,8 +406,11 @@ class _AddPageState extends State<AddPage> with SingleTickerProviderStateMixin {
           onLongPress: text == "<" ? () => setState(() => input = '') : null,
           child: Center(
             child: text == "<"
-                ? Icon(Icons.backspace_outlined,
-                    color: scheme.onSurfaceVariant, semanticLabel: 'Borrar')
+                ? Icon(
+                    Icons.backspace_outlined,
+                    color: scheme.onSurfaceVariant,
+                    semanticLabel: 'Borrar',
+                  )
                 : Text(
                     text,
                     style: TextStyle(
@@ -384,9 +441,7 @@ class _AddPageState extends State<AddPage> with SingleTickerProviderStateMixin {
               Expanded(
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    for (final key in row) Expanded(child: _num(key)),
-                  ],
+                  children: [for (final key in row) Expanded(child: _num(key))],
                 ),
               ),
           ],
@@ -407,8 +462,9 @@ class _AddPageState extends State<AddPage> with SingleTickerProviderStateMixin {
         date.year,
         day: date.day,
       );
-      SharedPreferences.getInstance()
-          .then((prefs) => prefs.setInt('last_payer', payer));
+      SharedPreferences.getInstance().then(
+        (prefs) => prefs.setInt('last_payer', payer),
+      );
       _controller.reverse();
       return;
     }
@@ -421,25 +477,74 @@ class _AddPageState extends State<AddPage> with SingleTickerProviderStateMixin {
       return;
     }
     if (category == ahorroCategory) {
-      // No se puede separar como ahorro más que el sobrante de ese mes.
+      // No se puede apartar más de lo que tienen disponible (lo mismo que
+      // "Tienes disponible" en Inicio).
       final finance = Provider.of<FinanceRepository>(context, listen: false);
-      final available = monthLeftover(
-          await finance.watchIncomes(date.month, date.year).first,
-          await db.queryByMonth(date.month, date.year).first);
+      final available = await finance.freeMoneyToday();
       if (!mounted) return;
       if (value > available + 0.001) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text(available > 0
-              ? 'Solo les sobran ${money(available)} este mes para ahorrar'
-              : 'No tienen dinero disponible para ahorrar'),
-        ));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              available > 0
+                  ? 'Solo hay ${money(available)} disponibles para ahorrar'
+                  : 'No hay dinero disponible para ahorrar',
+            ),
+          ),
+        );
         return;
       }
     }
     final note = (detalle == null || detalle!.isEmpty) ? category! : detalle!;
-    db.add(category!, value, date, note, paidBy: payer);
-    SharedPreferences.getInstance()
-        .then((prefs) => prefs.setInt('last_payer', payer));
+    if (withAllowance && _allowanceApplies) {
+      // Solo se descuenta de la propina lo que queda de ella este mes; lo
+      // que pase de eso es un gasto normal.
+      final messenger = ScaffoldMessenger.of(context);
+      // Se pide de nuevo: _people ya lo escucha el selector de quién pagó.
+      final people = await Provider.of<FinanceRepository>(
+        context,
+        listen: false,
+      ).watchPeople().first;
+      final left = await db.allowanceLeft(payer, date.month, date.year);
+      if (!mounted) return;
+      final who = personName(people, payer);
+      if (left <= 0.001) {
+        messenger.showSnackBar(
+          SnackBar(
+            content: Text(
+              people.length == 1
+                  ? 'No te queda propina este mes'
+                  : 'A $who no le queda propina este mes',
+            ),
+          ),
+        );
+        return;
+      }
+      final used = min(value, left);
+      await db.addWithAllowance(
+        category!,
+        value,
+        date,
+        note,
+        paidBy: payer,
+        fromAllowance: used,
+      );
+      if (used < value) {
+        messenger.showSnackBar(
+          SnackBar(
+            content: Text(
+              '${money(used)} salieron de la propina; los '
+              '${money(value - used)} restantes cuentan como gasto normal',
+            ),
+          ),
+        );
+      }
+    } else {
+      db.add(category!, value, date, note, paidBy: payer);
+    }
+    SharedPreferences.getInstance().then(
+      (prefs) => prefs.setInt('last_payer', payer),
+    );
     _controller.reverse();
   }
 
@@ -447,8 +552,12 @@ class _AddPageState extends State<AddPage> with SingleTickerProviderStateMixin {
     final scheme = Theme.of(context).colorScheme;
     final size = MediaQuery.of(context).size;
     final bottom = MediaQuery.of(context).padding.bottom;
-    final finalRect = Rect.fromLTWH(16, size.height - bottom - 16 - _buttonHeight,
-        size.width - 32, _buttonHeight);
+    final finalRect = Rect.fromLTWH(
+      16,
+      size.height - bottom - 16 - _buttonHeight,
+      size.width - 32,
+      _buttonHeight,
+    );
 
     // El botón + se estira hasta convertirse en el botón "Aceptar".
     final t = _buttonAnimation.value;
@@ -471,12 +580,16 @@ class _AddPageState extends State<AddPage> with SingleTickerProviderStateMixin {
                   if (_canSave) {
                     _save();
                   } else {
-                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                      content: Text(category == null
-                          ? 'Elige una categoría'
-                          : 'Escribe el monto'),
-                      duration: const Duration(seconds: 2),
-                    ));
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(
+                          category == null
+                              ? 'Elige una categoría'
+                              : 'Escribe el monto',
+                        ),
+                        duration: const Duration(seconds: 2),
+                      ),
+                    );
                   }
                 },
           child: Center(
@@ -488,8 +601,8 @@ class _AddPageState extends State<AddPage> with SingleTickerProviderStateMixin {
                     : owedBy != null
                     ? 'Guardar ${input.isEmpty ? '' : '${currencySettings.currency.symbol} $input '}· por cobrar'
                     : category == null
-                        ? 'Aceptar'
-                        : 'Guardar ${input.isEmpty ? '' : '${currencySettings.currency.symbol} $input '}en $category',
+                    ? 'Aceptar'
+                    : 'Guardar ${input.isEmpty ? '' : '${currencySettings.currency.symbol} $input '}en $category',
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(

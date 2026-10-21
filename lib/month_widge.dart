@@ -16,6 +16,8 @@ import 'package:primera_app_curso/theme.dart';
 
 enum GraphType { LINES, PIE }
 
+const _weekdayShort = ['lun', 'mar', 'mié', 'jue', 'vie', 'sáb', 'dom'];
+
 class MonthWidget extends StatefulWidget {
   /// Gastos del mes, sin contar lo separado como ahorro.
   final List<Expense> documents;
@@ -31,15 +33,25 @@ class MonthWidget extends StatefulWidget {
   /// Préstamos de cualquier mes que aún no devuelven.
   final List<Expense> pendingLoans;
   final double incomes;
+
+  /// Cada ingreso del mes (sueldos ya cobrados y los anotados a mano).
+  final List<Income> incomeItems;
   final List<double> perDay;
+
+  /// Gasto de cada día separado por categoría (para pintar las barras).
+  final List<Map<String, double>> perDayByCategory;
   final List<double> savedPerDay;
   final Map<String, double> categories;
   final Map<String, int> counts;
   final Map<String, double> budgets;
   final List<String> people;
 
-  /// Sueldos o gastos de fecha variable que aún no se confirman este mes.
-  final List<Recurring> pendingPayments;
+  /// Lo que todavía falta este mes (solo en el mes en curso).
+  final List<Upcoming> upcoming;
+
+  /// Dinero libre que traían al empezar el mes (de meses anteriores o del
+  /// punto de partida), sin contar lo apartado como ahorro.
+  final double carriedOver;
 
   /// Alerta a mostrar arriba (null si no hay o ya se ocultó).
   final SpendingAlert? alert;
@@ -52,12 +64,14 @@ class MonthWidget extends StatefulWidget {
     required this.month,
     required this.year,
     required this.incomes,
+    this.incomeItems = const [],
     required this.budgets,
     required this.people,
     required this.pendingLoans,
     this.alert,
     this.onDismissAlert,
-    this.pendingPayments = const [],
+    this.upcoming = const [],
+    this.carriedOver = 0,
     required List<Expense> documents,
     required int days,
   }) : allDocuments = documents,
@@ -73,6 +87,15 @@ class MonthWidget extends StatefulWidget {
        total = documents
            .where((doc) => isSpendingCategory(doc.category))
            .fold(0.0, (a, doc) => a + doc.value),
+       perDayByCategory = List.generate(days, (int index) {
+         final day = <String, double>{};
+         for (final doc in documents) {
+           if (isSpendingCategory(doc.category) && doc.day == index + 1) {
+             day[doc.category] = (day[doc.category] ?? 0) + doc.value;
+           }
+         }
+         return day;
+       }),
        perDay = List.generate(days, (int index) {
          return documents
              .where(
@@ -106,7 +129,21 @@ class MonthWidget extends StatefulWidget {
        ),
        super(key: key);
 
+  /// Resultado del mes: lo que entró menos lo gastado, ahorrado y prestado.
   double get leftover => incomes - total - saved - lent;
+
+  /// Lo que tienen libre hoy: lo que traían más el resultado del mes.
+  double get available => carriedOver + leftover;
+
+  double get toReceive =>
+      upcoming.where((u) => u.isIncome).fold(0.0, (a, u) => a + u.amount);
+
+  double get toPay =>
+      upcoming.where((u) => !u.isIncome).fold(0.0, (a, u) => a + u.amount);
+
+  /// Con cuánto libre cerrarían el mes si todo lo que falta se cobra y se
+  /// paga.
+  double get projected => available + toReceive - toPay;
 
   @override
   _MonthWidgetState createState() => _MonthWidgetState();
@@ -136,9 +173,13 @@ class _MonthWidgetState extends State<MonthWidget> {
                 ),
         ),
         _resumen(),
-        if (widget.pendingPayments.isNotEmpty) ...[
+        if (widget.incomeItems.isNotEmpty) ...[
           const SizedBox(height: 12),
-          _pendientes(),
+          _ingresos(),
+        ],
+        if (widget.upcoming.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          _porVenir(),
         ],
         if (widget.pendingLoans.isNotEmpty) ...[
           const SizedBox(height: 12),
@@ -149,7 +190,7 @@ class _MonthWidgetState extends State<MonthWidget> {
           _grafico(),
           const SizedBox(height: 24),
           Text(
-            'Categorías',
+            '¿En qué se fue el dinero?',
             style: Theme.of(
               context,
             ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
@@ -243,14 +284,22 @@ class _MonthWidgetState extends State<MonthWidget> {
                 ),
               ],
             ),
-            if (widget.saved > 0 && graphType == GraphType.LINES)
-              const Padding(
-                padding: EdgeInsets.only(top: 8),
+            if (graphType == GraphType.LINES)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
                 child: Row(
                   children: [
-                    _Legend(color: Color(0xFF059669), label: 'Gasto'),
-                    SizedBox(width: 16),
-                    _Legend(color: savingsColor, label: 'Ahorro'),
+                    Expanded(
+                      child: Text(
+                        'Cada color es una categoría (mira la lista de abajo)',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ),
+                    if (widget.saved > 0)
+                      const _Legend(color: savingsColor, label: 'Ahorro'),
                   ],
                 ),
               ),
@@ -264,6 +313,7 @@ class _MonthWidgetState extends State<MonthWidget> {
                         key: const ValueKey('dias'),
                         data: widget.perDay,
                         saved: widget.saved > 0 ? widget.savedPerDay : null,
+                        byCategory: widget.perDayByCategory,
                         highlight: isCurrentMonth ? now.day - 1 : null,
                         onDayTap: (index) => showDayExpenses(
                           context,
@@ -404,81 +454,172 @@ class _MonthWidgetState extends State<MonthWidget> {
     );
   }
 
-  Widget _pendientes() {
+  /// Tarjeta que se abre y se cierra (acordeón). Cerrada muestra solo el
+  /// título, un resumen y el total.
+  Widget _accordion({
+    required String title,
+    required String summary,
+    required Widget total,
+    required List<Widget> children,
+  }) {
     final scheme = Theme.of(context).colorScheme;
-    final today = DateTime.now().day;
-    final toPay = widget.pendingPayments
-        .where((r) => r.type == RecurringType.expense)
-        .fold(0.0, (a, r) => a + r.amount);
-    final toReceive = widget.pendingPayments
-        .where((r) => r.type == RecurringType.income)
-        .fold(0.0, (a, r) => a + r.amount);
-    final after = widget.leftover - toPay + toReceive;
-
     return Card(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 14, 8, 10),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Pendientes de este mes',
-              style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
-            ),
-            Text(
-              'Si todo se paga y cobra, el sobrante quedaría en ${money(after)}',
-              style: TextStyle(
-                fontSize: 12,
-                color: after < 0 ? expenseColor : scheme.onSurfaceVariant,
+      clipBehavior: Clip.antiAlias,
+      child: Theme(
+        // Sin las líneas que ExpansionTile dibuja al abrirse.
+        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+        child: ExpansionTile(
+          tilePadding: const EdgeInsets.fromLTRB(16, 4, 12, 4),
+          childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+          title: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  title,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 15,
+                  ),
+                ),
               ),
-            ),
-            const SizedBox(height: 4),
-            for (final item in widget.pendingPayments)
-              Row(
-                children: [
-                  Icon(
-                    item.type == RecurringType.income
-                        ? Icons.south_west
-                        : Icons.north_east,
-                    size: 18,
-                    color: item.type == RecurringType.income
-                        ? incomeColor
-                        : expenseColor,
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          item.description,
-                          style: const TextStyle(fontWeight: FontWeight.w600),
-                        ),
-                        Text(
-                          today > item.day
-                              ? '${money(item.amount)} · era ~día ${item.day}'
-                              : '${money(item.amount)} · ~día ${item.day}',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: today > item.day
-                                ? warningColor
-                                : scheme.onSurfaceVariant,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  TextButton(
-                    onPressed: () => _confirmPayment(item),
-                    child: Text(
-                      item.type == RecurringType.income ? 'Recibido' : 'Pagado',
-                    ),
-                  ),
-                ],
-              ),
-          ],
+              total,
+            ],
+          ),
+          subtitle: Text(
+            summary,
+            style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
+          ),
+          children: children,
         ),
       ),
+    );
+  }
+
+  /// Una fila de ingreso o gasto: flecha, nombre, fecha y monto.
+  Widget _moveRow({
+    required bool isIncome,
+    required String name,
+    required String date,
+    required double amount,
+    Color? dateColor,
+    Widget? action,
+  }) {
+    final scheme = Theme.of(context).colorScheme;
+    final color = isIncome ? incomeColor : expenseColor;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        children: [
+          Icon(
+            isIncome ? Icons.south_west : Icons.north_east,
+            size: 18,
+            color: color,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(name, style: const TextStyle(fontWeight: FontWeight.w600)),
+                Text(
+                  date,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: dateColor ?? scheme.onSurfaceVariant,
+                  ),
+                ),
+                if (action != null) action,
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            '${isIncome ? '+' : '−'} ${money(amount)}',
+            style: TextStyle(fontWeight: FontWeight.w700, color: color),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _withPerson(String name, int person) => widget.people.length > 1
+      ? '$name · ${personName(widget.people, person)}'
+      : name;
+
+  String _dayLabel(DateTime date) =>
+      '${_weekdayShort[date.weekday - 1]} ${date.day}';
+
+  /// Lo que entró en el mes, por fecha: cada sueldo cobrado y cada ingreso
+  /// anotado a mano.
+  Widget _ingresos() {
+    final items = [...widget.incomeItems]
+      ..sort((a, b) => a.day.compareTo(b.day));
+    return _accordion(
+      title: _isCurrentMonth
+          ? 'Lo que entró este mes'
+          : 'Lo que entró en ${monthNames[widget.month].toLowerCase()}',
+      summary: '${items.length} ${items.length == 1 ? 'ingreso' : 'ingresos'}',
+      total: Text(
+        money(widget.incomes),
+        style: const TextStyle(
+          fontWeight: FontWeight.w800,
+          fontSize: 15,
+          color: incomeColor,
+        ),
+      ),
+      children: [
+        for (final income in items)
+          _moveRow(
+            isIncome: true,
+            name: _withPerson(income.description, income.person),
+            date: _dayLabel(DateTime(income.year, income.month, income.day)),
+            amount: income.amount,
+          ),
+      ],
+    );
+  }
+
+  /// Lo que todavía falta este mes, por fecha. Los fijos se registran solos
+  /// el día que tocan; los de fecha variable se confirman aquí.
+  Widget _porVenir() {
+    final today = DateTime.now().day;
+    final pending = [
+      if (widget.toReceive > 0) 'por cobrar ${money(widget.toReceive)}',
+      if (widget.toPay > 0) 'por pagar ${money(widget.toPay)}',
+    ].join(' · ');
+    return _accordion(
+      title: 'Lo que falta este mes',
+      summary: pending[0].toUpperCase() + pending.substring(1),
+      total: const SizedBox.shrink(),
+      children: [
+        for (final u in widget.upcoming)
+          _moveRow(
+            isIncome: u.isIncome,
+            name: _withPerson(u.item.description, u.item.person),
+            date: !u.needsConfirm
+                ? _dayLabel(u.date)
+                : u.isIncome
+                ? 'Cerca del día ${u.date.day} · ¿ya llegó?'
+                : 'Cerca del día ${u.date.day} · ¿ya se pagó?',
+            dateColor: u.needsConfirm && today > u.date.day
+                ? warningColor
+                : null,
+            amount: u.amount,
+            action: u.needsConfirm
+                ? Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: FilledButton.tonal(
+                      style: FilledButton.styleFrom(
+                        minimumSize: const Size(0, 36),
+                        visualDensity: VisualDensity.compact,
+                      ),
+                      onPressed: () => _confirmPayment(u.item),
+                      child: Text(u.isIncome ? 'Ya llegó' : 'Ya pagué'),
+                    ),
+                  )
+                : null,
+          ),
+      ],
     );
   }
 
@@ -498,7 +639,12 @@ class _MonthWidgetState extends State<MonthWidget> {
           initial: item.amount.toStringAsFixed(2),
           number: true,
         ),
-        DialogField('Día', initial: '${now.day}', number: true),
+        DialogField.day(
+          isIncome ? 'Día en que se cobró' : 'Día en que se pagó',
+          initial: '${now.day}',
+          month: DateTime(widget.year, widget.month + 1),
+          maxDay: now.day,
+        ),
       ],
       validate: (values) {
         final day = parseAmount(values[1])!.round();
@@ -543,58 +689,53 @@ class _MonthWidgetState extends State<MonthWidget> {
     );
   }
 
+  bool get _isCurrentMonth {
+    final now = DateTime.now();
+    return now.month == widget.month + 1 && now.year == widget.year;
+  }
+
+  bool get _solo => widget.people.length < 2;
+
+  /// Tarjeta verde: responde primero "¿cuánto tengo?" y "¿cuánto me va a
+  /// quedar?"; el detalle del mes va abajo, en chico.
   Widget _resumen() {
     final scheme = Theme.of(context).colorScheme;
-    final used = widget.total + widget.saved;
-    final ratio = widget.incomes > 0 ? used / widget.incomes : null;
+    final white = scheme.onPrimary;
+    final soft = white.withValues(alpha: 0.85);
+    final current = _isCurrentMonth;
+    final main = current ? widget.available : widget.leftover;
+    final monthName = monthNames[widget.month].toLowerCase();
 
-    Widget dato(String label, double value, IconData icon) {
-      return Expanded(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(
-                  icon,
-                  size: 14,
-                  color: scheme.onPrimary.withValues(alpha: 0.8),
-                ),
-                const SizedBox(width: 4),
-                Text(
-                  label,
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: scheme.onPrimary.withValues(alpha: 0.8),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 2),
-            FittedBox(
-              fit: BoxFit.scaleDown,
-              alignment: Alignment.centerLeft,
-              child: Text(
-                money(value),
-                style: TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w700,
-                  color: scheme.onPrimary,
-                ),
-              ),
-            ),
-          ],
-        ),
-      );
+    final String title;
+    if (current) {
+      title = _solo ? 'Tienes disponible' : 'Tienen disponible';
+    } else if (widget.leftover >= 0) {
+      title = _solo ? 'En $monthName te sobró' : 'En $monthName les sobró';
+    } else {
+      title = _solo ? 'En $monthName te faltó' : 'En $monthName les faltó';
     }
 
-    // Al tocar la tarjeta se ve cuánto dinero deberían tener en total.
-    return GestureDetector(
-      onTap: () => showCashSheet(
-        context,
-        month: widget.month + 1,
-        year: widget.year,
+    Widget stat(IconData icon, String label, double value) => Text.rich(
+      TextSpan(
+        style: TextStyle(fontSize: 13, color: soft),
+        children: [
+          WidgetSpan(
+            alignment: PlaceholderAlignment.middle,
+            child: Icon(icon, size: 14, color: soft),
+          ),
+          TextSpan(text: ' $label '),
+          TextSpan(
+            text: money(value),
+            style: TextStyle(fontWeight: FontWeight.w700, color: white),
+          ),
+        ],
       ),
+    );
+
+    // Al tocar la tarjeta se ve el detalle y se compara con el banco.
+    return GestureDetector(
+      onTap: () =>
+          showCashSheet(context, month: widget.month + 1, year: widget.year),
       child: Container(
         padding: const EdgeInsets.all(20),
         decoration: BoxDecoration(
@@ -611,88 +752,89 @@ class _MonthWidgetState extends State<MonthWidget> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              'Gastado este mes',
-              style: TextStyle(
-                color: scheme.onPrimary.withValues(alpha: 0.85),
-                fontSize: 14,
-              ),
-            ),
-            const SizedBox(height: 4),
+            Text(title, style: TextStyle(color: soft, fontSize: 15)),
+            const SizedBox(height: 2),
             FittedBox(
               fit: BoxFit.scaleDown,
               child: Text(
-                money(widget.total),
+                money(main.abs()),
                 style: TextStyle(
-                  color: scheme.onPrimary,
-                  fontSize: 36,
+                  color: main < 0 ? const Color(0xFFFCA5A5) : white,
+                  fontSize: 40,
                   fontWeight: FontWeight.w800,
                 ),
               ),
             ),
-            if (ratio != null) ...[
-              const SizedBox(height: 12),
-              ClipRRect(
-                borderRadius: BorderRadius.circular(4),
-                child: LinearProgressIndicator(
-                  value: ratio.clamp(0.0, 1.0),
-                  minHeight: 8,
-                  color: ratio > 1 ? const Color(0xFFFCA5A5) : scheme.onPrimary,
-                  backgroundColor: scheme.onPrimary.withValues(alpha: 0.2),
-                ),
-              ),
-              const SizedBox(height: 6),
+            if (current && main < 0)
               Text(
-                ratio > 1
-                    ? 'Gastaron más de lo que ingresó'
-                    : 'Usaron el ${(ratio * 100).round()}% de los ingresos',
-                style: TextStyle(
-                  color: scheme.onPrimary.withValues(alpha: 0.85),
-                  fontSize: 12,
-                ),
+                _solo
+                    ? 'Gastaste más de lo que tenías'
+                    : 'Gastaron más de lo que tenían',
+                style: const TextStyle(color: Color(0xFFFCA5A5)),
               ),
+            if (current && widget.upcoming.isNotEmpty) ...[
+              const SizedBox(height: 4),
+              _cierre(scheme),
             ],
-            const SizedBox(height: 16),
-            Row(
+            const SizedBox(height: 14),
+            Wrap(
+              spacing: 16,
+              runSpacing: 6,
               children: [
-                dato('Ingresos', widget.incomes, Icons.south_west),
-                dato('Ahorrado', widget.saved, Icons.savings_outlined),
-                dato(
-                  'Sobrante',
-                  widget.leftover,
-                  widget.leftover < 0
-                      ? Icons.warning_amber
-                      : Icons.account_balance_wallet_outlined,
+                stat(Icons.south_west, 'Entró', widget.incomes),
+                stat(
+                  Icons.north_east,
+                  _solo ? 'Gastaste' : 'Gastaron',
+                  widget.total,
                 ),
+                if (widget.saved > 0)
+                  stat(
+                    Icons.savings_outlined,
+                    _solo ? 'Ahorraste' : 'Ahorraron',
+                    widget.saved,
+                  ),
               ],
             ),
-            const SizedBox(height: 14),
+            const SizedBox(height: 12),
             Row(
               children: [
-                Icon(
-                  Icons.account_balance,
-                  size: 14,
-                  color: scheme.onPrimary.withValues(alpha: 0.8),
-                ),
-                const SizedBox(width: 6),
                 Expanded(
                   child: Text(
-                    '¿Cuánto dinero deberían tener? Toca aquí',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: scheme.onPrimary.withValues(alpha: 0.85),
-                    ),
+                    'Ver detalle',
+                    style: TextStyle(fontSize: 13, color: soft),
                   ),
                 ),
-                Icon(
-                  Icons.chevron_right,
-                  size: 18,
-                  color: scheme.onPrimary.withValues(alpha: 0.8),
-                ),
+                Icon(Icons.chevron_right, size: 18, color: soft),
               ],
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  /// Dentro de la tarjeta verde, en una línea: con cuánto cerrarían el mes
+  /// si se cobra y se paga todo lo que falta.
+  Widget _cierre(ColorScheme scheme) {
+    final white = scheme.onPrimary;
+    final projected = widget.projected;
+    return Text.rich(
+      TextSpan(
+        style: TextStyle(fontSize: 15, color: white.withValues(alpha: 0.9)),
+        children: [
+          TextSpan(
+            text: _solo
+                ? 'A fin de mes te quedará '
+                : 'A fin de mes les quedará ',
+          ),
+          TextSpan(
+            text: money(projected),
+            style: TextStyle(
+              fontWeight: FontWeight.w800,
+              color: projected < 0 ? const Color(0xFFFCA5A5) : white,
+            ),
+          ),
+        ],
       ),
     );
   }

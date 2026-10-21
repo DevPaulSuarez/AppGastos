@@ -102,14 +102,22 @@ class LinesGraphWidget extends StatelessWidget {
   /// Se llama con el índice del día (0 = día 1) al tocar su columna.
   final ValueChanged<int>? onDayTap;
 
-  const LinesGraphWidget(
-      {super.key,
-      required this.data,
-      this.saved,
-      this.highlight,
-      this.onDayTap});
+  /// Gasto de cada día por categoría: si se indica, cada barra se pinta por
+  /// partes con el color de cada categoría (los mismos de la lista).
+  final List<Map<String, double>>? byCategory;
 
-  double _savedAt(int i) => saved == null ? 0 : saved![i];
+  const LinesGraphWidget({
+    super.key,
+    required this.data,
+    this.saved,
+    this.highlight,
+    this.onDayTap,
+    this.byCategory,
+  });
+
+  // Si un día se usó dinero de una meta, el ahorro de ese día es negativo:
+  // en la barra no se dibuja.
+  double _savedAt(int i) => saved == null || saved![i] < 0 ? 0 : saved![i];
 
   static String _compact(double value) {
     if (value >= 1000) {
@@ -118,10 +126,54 @@ class LinesGraphWidget extends StatelessWidget {
     return value.toStringAsFixed(0);
   }
 
+  /// Partes de la barra de un día: cada categoría con su color, de la que
+  /// más se gastó en el mes (abajo) a la que menos, y el ahorro arriba.
+  List<BarChartRodStackItem> _stack(int i, List<String> order, Color spend) {
+    final items = <BarChartRodStackItem>[];
+    var from = 0.0;
+    final day = byCategory?[i];
+    if (day != null) {
+      for (final category in order) {
+        final value = day[category] ?? 0;
+        if (value <= 0) continue;
+        items.add(
+          BarChartRodStackItem(from, from + value, categoryColor(category)),
+        );
+        from += value;
+      }
+    } else if (data[i] > 0) {
+      items.add(BarChartRodStackItem(0, data[i], spend));
+      from = data[i];
+    }
+    if (_savedAt(i) > 0) {
+      items.add(
+        BarChartRodStackItem(from, from + _savedAt(i), const Color(0xFF2563EB)),
+      );
+    }
+    return items;
+  }
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final totals = [for (var i = 0; i < data.length; i++) data[i] + _savedAt(i)];
+    // Con colores por categoría, la barra mide la suma de sus partes.
+    final spent = [
+      for (var i = 0; i < data.length; i++)
+        byCategory == null
+            ? data[i]
+            : byCategory![i].values
+                  .where((v) => v > 0)
+                  .fold(0.0, (a, b) => a + b),
+    ];
+    final monthByCategory = <String, double>{};
+    for (final day in byCategory ?? const <Map<String, double>>[]) {
+      day.forEach((k, v) => monthByCategory[k] = (monthByCategory[k] ?? 0) + v);
+    }
+    final order = monthByCategory.keys.toList()
+      ..sort((a, b) => monthByCategory[b]!.compareTo(monthByCategory[a]!));
+    final totals = [
+      for (var i = 0; i < data.length; i++) spent[i] + _savedAt(i),
+    ];
     final maxValue = totals.fold(0.0, (a, b) => a > b ? a : b);
     final maxY = maxValue == 0 ? 10.0 : maxValue * 1.15;
 
@@ -149,9 +201,13 @@ class LinesGraphWidget extends StatelessWidget {
                 if (value == meta.max) return const SizedBox.shrink();
                 return SideTitleWidget(
                   meta: meta,
-                  child: Text(_compact(value),
-                      style: TextStyle(
-                          fontSize: 11, color: scheme.onSurfaceVariant)),
+                  child: Text(
+                    _compact(value),
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: scheme.onSurfaceVariant,
+                    ),
+                  ),
                 );
               },
             ),
@@ -164,9 +220,13 @@ class LinesGraphWidget extends StatelessWidget {
                 if (day != 1 && day % 5 != 0) return const SizedBox.shrink();
                 return SideTitleWidget(
                   meta: meta,
-                  child: Text('$day',
-                      style: TextStyle(
-                          fontSize: 11, color: scheme.onSurfaceVariant)),
+                  child: Text(
+                    '$day',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: scheme.onSurfaceVariant,
+                    ),
+                  ),
                 );
               },
             ),
@@ -187,7 +247,9 @@ class LinesGraphWidget extends StatelessWidget {
               'Día ${group.x + 1}\n'
               '${_savedAt(group.x) > 0 ? 'Gasto ${money(data[group.x])}\nAhorro ${money(_savedAt(group.x))}' : money(rod.toY)}',
               TextStyle(
-                  color: scheme.onInverseSurface, fontWeight: FontWeight.w600),
+                color: scheme.onInverseSurface,
+                fontWeight: FontWeight.w600,
+              ),
             ),
           ),
         ),
@@ -198,16 +260,15 @@ class LinesGraphWidget extends StatelessWidget {
               barRods: [
                 BarChartRodData(
                   toY: totals[i],
-                  width: 6,
+                  width: 7,
                   borderRadius: BorderRadius.circular(3),
-                  rodStackItems: _savedAt(i) > 0
-                      ? [
-                          BarChartRodStackItem(0, data[i],
-                              i == highlight ? scheme.primary : scheme.primary.withValues(alpha: 0.55)),
-                          BarChartRodStackItem(
-                              data[i], totals[i], const Color(0xFF2563EB)),
-                        ]
-                      : const [],
+                  rodStackItems: _stack(
+                    i,
+                    order,
+                    i == highlight
+                        ? scheme.primary
+                        : scheme.primary.withValues(alpha: 0.55),
+                  ),
                   backDrawRodData: BackgroundBarChartRodData(
                     show: true,
                     toY: maxY,
@@ -243,9 +304,9 @@ class TrendChart extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final maxValue = months.fold(
-        0.0,
-        (a, m) => [a, m.incomes, m.expenses]
-            .reduce((x, y) => x > y ? x : y));
+      0.0,
+      (a, m) => [a, m.incomes, m.expenses].reduce((x, y) => x > y ? x : y),
+    );
 
     return BarChart(
       BarChartData(
@@ -270,9 +331,13 @@ class TrendChart extends StatelessWidget {
                 if (value == meta.max) return const SizedBox.shrink();
                 return SideTitleWidget(
                   meta: meta,
-                  child: Text(LinesGraphWidget._compact(value),
-                      style: TextStyle(
-                          fontSize: 11, color: scheme.onSurfaceVariant)),
+                  child: Text(
+                    LinesGraphWidget._compact(value),
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: scheme.onSurfaceVariant,
+                    ),
+                  ),
                 );
               },
             ),
@@ -282,9 +347,13 @@ class TrendChart extends StatelessWidget {
               showTitles: true,
               getTitlesWidget: (value, meta) => SideTitleWidget(
                 meta: meta,
-                child: Text(months[value.toInt()].label,
-                    style: TextStyle(
-                        fontSize: 11, color: scheme.onSurfaceVariant)),
+                child: Text(
+                  months[value.toInt()].label,
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: scheme.onSurfaceVariant,
+                  ),
+                ),
               ),
             ),
           ),
@@ -295,7 +364,9 @@ class TrendChart extends StatelessWidget {
             getTooltipItem: (group, _, rod, rodIndex) => BarTooltipItem(
               '${rodIndex == 0 ? 'Ingresos' : 'Gastos'}\n${money(rod.toY)}',
               TextStyle(
-                  color: scheme.onInverseSurface, fontWeight: FontWeight.w600),
+                color: scheme.onInverseSurface,
+                fontWeight: FontWeight.w600,
+              ),
             ),
           ),
         ),

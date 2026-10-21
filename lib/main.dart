@@ -14,6 +14,8 @@ import 'package:primera_app_curso/pages/loans_page.dart';
 import 'package:primera_app_curso/pages/login_page.dart';
 import 'package:primera_app_curso/pages/report_page.dart';
 import 'package:primera_app_curso/pages/settings_page.dart';
+import 'package:primera_app_curso/pages/setup_page.dart';
+import 'package:primera_app_curso/pages/welcome_page.dart';
 import 'package:primera_app_curso/pages/year_page.dart';
 import 'package:primera_app_curso/theme.dart';
 import 'package:provider/provider.dart';
@@ -125,17 +127,41 @@ class Miapp extends StatelessWidget {
         routes: {
           '/': (BuildContext context) {
             if (modoPruebas) {
-              return const Inicio();
+              return const _AccountGate();
             }
             var state = Provider.of<LoginState>(context);
             if (state.isLoggedIn()) {
-              return const Inicio();
+              return const _AccountGate();
             } else {
               return const LoginPage();
             }
           },
         },
       ),
+    );
+  }
+}
+
+/// La primera vez pregunta si la cuenta es individual o de pareja y luego
+/// pide sueldos y gastos fijos; después entra directo al inicio.
+class _AccountGate extends StatelessWidget {
+  const _AccountGate();
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<AccountStep>(
+      stream: Provider.of<FinanceRepository>(context).watchAccountStep(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Scaffold(
+              body: Center(child: CircularProgressIndicator()));
+        }
+        return switch (snapshot.data!) {
+          AccountStep.choose => const WelcomePage(),
+          AccountStep.setup => const SetupPage(),
+          AccountStep.ready => const Inicio(),
+        };
+      },
     );
   }
 }

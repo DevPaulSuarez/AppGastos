@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:primera_app_curso/alerts.dart';
+import 'package:primera_app_curso/cash.dart';
 import 'package:primera_app_curso/categories.dart';
 import 'package:primera_app_curso/currency.dart';
 import 'package:primera_app_curso/expense.dart';
@@ -38,6 +39,13 @@ class _InicioState extends State<Inicio> {
   StreamSubscription<CategorySettings>? _categories;
   StreamSubscription<CurrencySettings>? _currency;
 
+  /// Primer mes con algo anotado (gasto o ingreso): antes de ese mes no hay
+  /// nada que ver, así que la flecha ‹ no deja ir más atrás.
+  DateTime? _firstExpense;
+  DateTime? _firstIncome;
+  StreamSubscription<List<Expense>>? _expensesSub;
+  StreamSubscription<List<Income>>? _incomesSub;
+
   /// Alerta vigente del mes en curso y si su tarjeta está a la vista. La
   /// tarjeta se muestra un rato; después queda el ícono junto al mes.
   SpendingAlert? _alert;
@@ -53,20 +61,42 @@ class _InicioState extends State<Inicio> {
     _categories = Provider.of<FinanceRepository>(context, listen: false)
         .watchCategorySettings()
         .listen((settings) {
-      categorySettings = settings;
-      if (mounted) setState(() {});
-    });
+          categorySettings = settings;
+          if (mounted) setState(() {});
+        });
 
     // Al cambiar la moneda se vuelven a leer los datos, ya convertidos.
     _currency = Provider.of<FinanceRepository>(context, listen: false)
         .watchCurrencySettings()
         .listen((settings) {
-      currencySettings = settings;
-      if (mounted) setState(() {});
-    });
+          currencySettings = settings;
+          if (mounted) setState(() {});
+        });
 
     // Registra los sueldos y gastos fijos del mes si todavía no están.
     Provider.of<FinanceRepository>(context, listen: false).applyRecurring();
+
+    DateTime? first(Iterable<DateTime> months) =>
+        months.isEmpty ? null : months.reduce((a, b) => a.isBefore(b) ? a : b);
+    _expensesSub = Provider.of<ExpensesRepository>(context, listen: false)
+        .queryAll()
+        .listen((all) {
+          if (!mounted) return;
+          setState(
+            () => _firstExpense = first(
+              all.map((e) => DateTime(e.year, e.month)),
+            ),
+          );
+        });
+    _incomesSub = Provider.of<FinanceRepository>(context, listen: false)
+        .watchAllIncomes()
+        .listen((all) {
+          if (!mounted) return;
+          setState(
+            () =>
+                _firstIncome = first(all.map((i) => DateTime(i.year, i.month))),
+          );
+        });
 
     setupNotificationPlugin();
     tz.initializeTimeZones();
@@ -76,6 +106,8 @@ class _InicioState extends State<Inicio> {
   void dispose() {
     _categories?.cancel();
     _currency?.cancel();
+    _expensesSub?.cancel();
+    _incomesSub?.cancel();
     _alertTimer?.cancel();
     super.dispose();
   }
@@ -93,12 +125,27 @@ class _InicioState extends State<Inicio> {
     return now.month - 1 == currentPage && now.year == selectedYear;
   }
 
-  /// Enero de hace [yearsToBrowse] años: no se puede ir más atrás.
-  bool get _isFirstMonth =>
-      currentPage == 0 && selectedYear <= DateTime.now().year - yearsToBrowse;
+  /// No se puede ir más atrás del primer mes con algo anotado (ni del mes en
+  /// curso si todavía no hay nada), ni de enero de hace [yearsToBrowse] años.
+  bool get _isFirstMonth {
+    final now = DateTime.now();
+    final shown = DateTime(selectedYear, currentPage + 1);
+    final starts = [
+      DateTime(now.year, now.month),
+      ?_firstExpense,
+      ?_firstIncome,
+    ];
+    final firstData = starts.reduce((a, b) => a.isBefore(b) ? a : b);
+    return !shown.isAfter(firstData) ||
+        (currentPage == 0 && selectedYear <= now.year - yearsToBrowse);
+  }
 
-  Widget _botonAction(IconData icon, String label, VoidCallback callback,
-      {bool selected = false}) {
+  Widget _botonAction(
+    IconData icon,
+    String label,
+    VoidCallback callback, {
+    bool selected = false,
+  }) {
     final scheme = Theme.of(context).colorScheme;
     final color = selected ? scheme.primary : scheme.onSurfaceVariant;
     return Expanded(
@@ -112,11 +159,14 @@ class _InicioState extends State<Inicio> {
             children: [
               Icon(icon, color: color),
               const SizedBox(height: 2),
-              Text(label,
-                  style: TextStyle(
-                      fontSize: 11,
-                      color: color,
-                      fontWeight: selected ? FontWeight.w700 : null)),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 11,
+                  color: color,
+                  fontWeight: selected ? FontWeight.w700 : null,
+                ),
+              ),
             ],
           ),
         ),
@@ -141,9 +191,11 @@ class _InicioState extends State<Inicio> {
                 selectedYear = now.year;
               });
             }, selected: true),
-            _botonAction(Icons.account_balance_wallet_outlined, 'Balance', () {
-              Navigator.of(context).pushNamed('/balance',
-                  arguments: BalanceParams(currentPage + 1, selectedYear));
+            _botonAction(Icons.bar_chart_rounded, 'Resumen', () {
+              Navigator.of(context).pushNamed(
+                '/balance',
+                arguments: BalanceParams(currentPage + 1, selectedYear),
+              );
             }),
             const SizedBox(width: 64.0),
             _botonAction(Icons.savings_outlined, 'Metas', () {
@@ -185,8 +237,10 @@ class _InicioState extends State<Inicio> {
           _selector(),
           Expanded(
             child: MultiStreamBuilder(
-              key: ValueKey('$selectedYear-$month-${db.hashCode}-'
-                  '${currencySettings.code}-${currencySettings.rates}'),
+              key: ValueKey(
+                '$selectedYear-$month-${db.hashCode}-'
+                '${currencySettings.code}-${currencySettings.rates}',
+              ),
               streams: [
                 db.queryByMonth(month, selectedYear),
                 finance.watchIncomes(month, selectedYear),
@@ -194,40 +248,71 @@ class _InicioState extends State<Inicio> {
                 finance.watchPeople(),
                 db.queryLoans(),
                 finance.watchRecurring(),
+                finance.watchAllIncomes(),
+                db.queryAll(),
+                finance.watchCashCheck(),
               ],
               builder: (BuildContext context, List<Object?> values) {
                 final docs = values[0] as List<Expense>;
                 final incomes = values[1] as List<Income>;
                 final budgets = values[2] as Map<String, double>;
+                final people = values[3] as List<String>;
+                // Lo que traían libre (sin lo apartado como ahorro) al
+                // empezar el mes: con eso se paga, por ejemplo, el alquiler
+                // del 5 mientras llega el sueldo del 15.
+                final carriedOver = cashSummaryUntil(
+                  values[6] as List<Income>,
+                  values[7] as List<Expense>,
+                  values[8] as CashCheck?,
+                  people.length,
+                  DateTime(selectedYear, month, 0),
+                ).free;
 
-                // Pagos de fecha variable (ej. alquiler) que aún no confirman.
-                final pending = _isCurrentMonth
-                    ? FinanceRepository.pendingConfirmations(
-                        values[5] as List<Recurring>,
-                        {...docs.map((e) => e.id), ...incomes.map((i) => i.id)},
-                        month,
-                        selectedYear)
-                    : <Recurring>[];
-                if (docs.isEmpty && incomes.isEmpty && pending.isEmpty) {
+                // Lo que todavía falta este mes: sueldos por cobrar, fijos y
+                // propinas por pagar, pagos de fecha variable por confirmar.
+                final upcoming = _isCurrentMonth
+                    ? FinanceRepository.upcoming(values[5] as List<Recurring>, {
+                        ...docs.map((e) => e.id),
+                        ...incomes.map((i) => i.id),
+                      }, DateTime.now())
+                    : <Upcoming>[];
+                // Sin movimientos, pendientes ni dinero de antes no hay nada
+                // que mostrar.
+                if (docs.isEmpty &&
+                    incomes.isEmpty &&
+                    upcoming.isEmpty &&
+                    carriedOver.abs() < 0.005) {
                   return _empty();
                 }
-                final alert = monthAlert(docs,
-                    incomes.fold(0.0, (sum, i) => sum + i.amount), month,
-                    selectedYear,
-                    pendingPayments: pending
-                        .where((r) => r.type == RecurringType.expense)
-                        .fold(0.0, (a, r) => a + r.amount));
-                WidgetsBinding.instance
-                    .addPostFrameCallback((_) => _updateAlert(alert));
+                final alert = monthAlert(
+                  docs,
+                  incomes.fold(0.0, (sum, i) => sum + i.amount),
+                  month,
+                  selectedYear,
+                  pendingPayments: upcoming
+                      .where((u) => !u.isIncome)
+                      .fold(0.0, (a, u) => a + u.amount),
+                  // Lo de fecha variable es un estimado: no se cuenta como
+                  // ingreso seguro.
+                  pendingIncome: upcoming
+                      .where((u) => u.isIncome && !u.needsConfirm)
+                      .fold(0.0, (a, u) => a + u.amount),
+                  carriedOver: carriedOver,
+                );
+                WidgetsBinding.instance.addPostFrameCallback(
+                  (_) => _updateAlert(alert),
+                );
                 return MonthWidget(
                   alert: _showAlert ? _alert : null,
-                  pendingPayments: pending,
+                  upcoming: upcoming,
                   onDismissAlert: _hideAlert,
                   days: daysInMonth(month, selectedYear),
                   documents: docs,
                   incomes: incomes.fold(0.0, (sum, i) => sum + i.amount),
+                  incomeItems: incomes,
                   budgets: budgets,
-                  people: values[3] as List<String>,
+                  people: people,
+                  carriedOver: carriedOver,
                   pendingLoans: (values[4] as List<Expense>)
                       .where((e) => e.pending > 0.001)
                       .toList(),
@@ -249,31 +334,22 @@ class _InicioState extends State<Inicio> {
         padding: const EdgeInsets.fromLTRB(32, 16, 32, 100),
         child: Column(
           children: <Widget>[
-            const Image(
-                image: AssetImage('assets/no_data.png'), height: 180),
+            const Image(image: AssetImage('assets/no_data.png'), height: 180),
             const SizedBox(height: 24),
-            Text('Aún no hay movimientos',
-                style: Theme.of(context)
-                    .textTheme
-                    .titleLarge
-                    ?.copyWith(fontWeight: FontWeight.w700)),
+            Text(
+              'Aún no hay movimientos',
+              style: Theme.of(
+                context,
+              ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
+            ),
             const SizedBox(height: 8),
             Text(
               _isCurrentMonth
-                  ? 'Toca + para registrar su primer gasto, o configura '
-                      'sus sueldos para ver cuánto les sobra.'
+                  ? 'Toca + para anotar un gasto o un ingreso.'
                   : 'No hay registros en este mes.',
               textAlign: TextAlign.center,
               style: TextStyle(color: scheme.onSurfaceVariant),
             ),
-            if (_isCurrentMonth) ...[
-              const SizedBox(height: 20),
-              OutlinedButton.icon(
-                icon: const Icon(Icons.payments_outlined),
-                label: const Text('Configurar sueldos'),
-                onPressed: () => Navigator.of(context).pushNamed('/settings'),
-              ),
-            ],
           ],
         ),
       ),
@@ -285,8 +361,10 @@ class _InicioState extends State<Inicio> {
     return IconButton(
       tooltip: danger ? 'Están en rojo' : 'Van gastando muy rápido',
       visualDensity: VisualDensity.compact,
-      icon: Icon(danger ? Icons.error : Icons.speed,
-          color: danger ? expenseColor : warningColor),
+      icon: Icon(
+        danger ? Icons.error : Icons.speed,
+        color: danger ? expenseColor : warningColor,
+      ),
       onPressed: _showAlert ? _hideAlert : _revealAlert,
     );
   }
@@ -310,22 +388,26 @@ class _InicioState extends State<Inicio> {
                 Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Text(label,
-                        style: Theme.of(context)
-                            .textTheme
-                            .titleLarge
-                            ?.copyWith(fontWeight: FontWeight.w700)),
+                    Text(
+                      label,
+                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
                     if (_alert != null && _isCurrentMonth) _alertIcon(),
                   ],
                 ),
                 if (_isFirstMonth)
                   GestureDetector(
                     onTap: () => openYearReport(context),
-                    child: Text('¿Años anteriores? Ver informe anual',
-                        style: TextStyle(
-                            fontSize: 12,
-                            color: Theme.of(context).colorScheme.primary,
-                            fontWeight: FontWeight.w600)),
+                    child: Text(
+                      '¿Años anteriores? Ver informe anual',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Theme.of(context).colorScheme.primary,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
                   )
                 else if (!_isCurrentMonth)
                   GestureDetector(
@@ -336,11 +418,14 @@ class _InicioState extends State<Inicio> {
                         selectedYear = now.year;
                       });
                     },
-                    child: Text('Volver a este mes',
-                        style: TextStyle(
-                            fontSize: 12,
-                            color: Theme.of(context).colorScheme.primary,
-                            fontWeight: FontWeight.w600)),
+                    child: Text(
+                      'Volver a este mes',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Theme.of(context).colorScheme.primary,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
                   ),
               ],
             ),
@@ -361,20 +446,24 @@ class _InicioState extends State<Inicio> {
     const android = AndroidInitializationSettings('@mipmap/ic_launcher');
 
     const iOS = DarwinInitializationSettings();
-    const initializationSettings = InitializationSettings(android: android, iOS: iOS);
+    const initializationSettings = InitializationSettings(
+      android: android,
+      iOS: iOS,
+    );
 
     flutterLocalNotificationsPlugin
         .initialize(
-      settings: initializationSettings,
-      onDidReceiveNotificationResponse: onSelectNotification,
-    )
+          settings: initializationSettings,
+          onDidReceiveNotificationResponse: onSelectNotification,
+        )
         .then((_) async {
-      await flutterLocalNotificationsPlugin
-          .resolvePlatformSpecificImplementation<
-              AndroidFlutterLocalNotificationsPlugin>()
-          ?.requestNotificationsPermission();
-      setupNotification();
-    });
+          await flutterLocalNotificationsPlugin
+              .resolvePlatformSpecificImplementation<
+                AndroidFlutterLocalNotificationsPlugin
+              >()
+              ?.requestNotificationsPermission();
+          setupNotification();
+        });
   }
 
   /// Guarda la alerta del mes; si es nueva o cambió de nivel, muestra la
@@ -444,16 +533,20 @@ class _InicioState extends State<Inicio> {
     // recordatorio una vez al día
     const AndroidNotificationDetails androidPlatformChannelSpecifics =
         AndroidNotificationDetails(
-            'recordatorio_diario', 'Recordatorio diario',
-            channelDescription: 'Recordatorio para registrar los gastos del día');
-    const NotificationDetails platformChannelSpecifics =
-        NotificationDetails(android: androidPlatformChannelSpecifics);
+          'recordatorio_diario',
+          'Recordatorio diario',
+          channelDescription: 'Recordatorio para registrar los gastos del día',
+        );
+    const NotificationDetails platformChannelSpecifics = NotificationDetails(
+      android: androidPlatformChannelSpecifics,
+    );
     await flutterLocalNotificationsPlugin.periodicallyShow(
-        id: 0,
-        title: '¿Gastaste algo hoy?',
-        body: 'Regístralo para llevar el control de tus gastos',
-        repeatInterval: RepeatInterval.daily,
-        notificationDetails: platformChannelSpecifics,
-        androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle);
+      id: 0,
+      title: '¿Gastaste algo hoy?',
+      body: 'Regístralo para llevar el control de tus gastos',
+      repeatInterval: RepeatInterval.daily,
+      notificationDetails: platformChannelSpecifics,
+      androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+    );
   }
 }

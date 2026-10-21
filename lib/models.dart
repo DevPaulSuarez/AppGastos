@@ -55,6 +55,13 @@ enum Frequency { monthly, biweekly, weekly }
 /// Qué pasa si el día de pago cae sábado o domingo.
 enum WeekendShift { none, next, previous }
 
+/// Cómo se le explica al usuario cada [WeekendShift].
+const weekendShiftLabels = {
+  WeekendShift.none: 'Ese mismo día',
+  WeekendShift.previous: 'El viernes antes',
+  WeekendShift.next: 'El lunes después',
+};
+
 /// Mueve [date] según [shift] si cae fin de semana.
 DateTime shiftWeekend(DateTime date, WeekendShift shift) {
   final weekend = date.weekday >= DateTime.saturday;
@@ -76,9 +83,9 @@ const weekdayNames = [
 ];
 
 /// Movimiento que se repite: un sueldo fijo, un gasto fijo (alquiler, luz,
-/// internet...) o la propina de una persona. Los sueldos y gastos fijos se
-/// registran al empezar cada mes; las propinas, el día que tocan (el 15 y/o
-/// el último día del mes).
+/// internet...) o la propina de una persona. Todos se registran el día que
+/// tocan (las propinas, el 15 y/o el 30); los de fecha variable, cuando se
+/// confirma el pago.
 class Recurring {
   final String id;
   final RecurringType type;
@@ -92,6 +99,9 @@ class Recurring {
 
   /// Sueldos y gastos fijos: cada cuánto se repiten.
   final Frequency frequency;
+
+  /// Dos veces al mes: día del segundo pago ([day] es el del primero).
+  final int secondDay;
 
   /// Mensual con fecha variable (ej. el alquiler que cobran el 7, el 12 o el
   /// 20): no se registra solo; queda pendiente hasta que confirmen el pago.
@@ -116,6 +126,7 @@ class Recurring {
     required this.amount,
     required this.day,
     this.frequency = Frequency.monthly,
+    this.secondDay = 30,
     this.confirm = false,
     this.weekendShift = WeekendShift.none,
     this.biweekly = false,
@@ -129,6 +140,14 @@ class Recurring {
       !confirm &&
       frequency != Frequency.monthly;
 
+  /// Cuánto es al mes, aproximado (una semana = 52/12 por mes).
+  double get monthlyAmount => switch (frequency) {
+        _ when confirm || type == RecurringType.allowance => amount,
+        Frequency.monthly => amount,
+        Frequency.biweekly => amount * 2,
+        Frequency.weekly => amount * 52 / 12,
+      };
+
   /// Texto corto con cuándo se paga, por ejemplo "cada semana (viernes)".
   String get schedule => switch (type) {
         RecurringType.allowance =>
@@ -136,7 +155,7 @@ class Recurring {
         _ when confirm => 'una vez al mes, fecha variable (~día $day)',
         _ => switch (frequency) {
             Frequency.monthly => 'cada mes, día $day',
-            Frequency.biweekly => 'cada quincena (15 y 30)',
+            Frequency.biweekly => 'dos veces al mes (días $day y $secondDay)',
             Frequency.weekly =>
               'cada semana (${weekdayNames[(day - 1).clamp(0, 6)].toLowerCase()})',
           } +
@@ -161,6 +180,7 @@ class Recurring {
       frequency: Frequency.values.firstWhere(
           (f) => f.name == map['frequency'],
           orElse: () => Frequency.monthly),
+      secondDay: (map['secondDay'] as num?)?.toInt() ?? 30,
       confirm: (map['confirm'] as bool?) ?? false,
       weekendShift: WeekendShift.values.firstWhere(
           (w) => w.name == map['weekendShift'],
@@ -179,6 +199,7 @@ class Recurring {
         "currency": currencySettings.code,
         "day": day,
         "frequency": frequency.name,
+        "secondDay": secondDay,
         "confirm": confirm,
         "weekendShift": weekendShift.name,
         "biweekly": biweekly,
@@ -195,6 +216,7 @@ class Recurring {
       amount: amount,
       day: day,
       frequency: frequency,
+      secondDay: secondDay,
       confirm: confirm,
       weekendShift: weekendShift,
       biweekly: biweekly,

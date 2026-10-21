@@ -13,7 +13,8 @@ import 'package:primera_app_curso/utils.dart';
 import 'package:provider/provider.dart';
 
 /// Metas de ahorro (viaje, emergencia, etc.). Cada aporte se registra como
-/// un gasto de "Ahorro Neto", así se descuenta del sobrante del mes.
+/// "Ahorro Neto": no es gasto, pero se aparta de lo disponible. Cuando se usa
+/// el dinero de una meta, el gasto se anota y el mismo monto sale de la meta.
 class GoalsPage extends StatelessWidget {
   const GoalsPage({super.key});
 
@@ -35,9 +36,8 @@ class GoalsPage extends StatelessWidget {
           finance.watchGoals(),
           db.queryAll(),
           finance.watchPeople(),
-          // Solo se puede aportar el sobrante de este mes.
-          db.queryByMonth(DateTime.now().month, DateTime.now().year),
-          finance.watchIncomes(DateTime.now().month, DateTime.now().year),
+          finance.watchAllIncomes(),
+          finance.watchCashCheck(),
         ],
         builder: (context, values) {
           final goals = values[0] as List<Goal>;
@@ -46,10 +46,16 @@ class GoalsPage extends StatelessWidget {
           final savings = all
               .where((e) => e.category == ahorroCategory)
               .toList();
-          final available = monthLeftover(
-            values[4] as List<Income>,
-            values[3] as List<Expense>,
-          );
+          // Se puede apartar lo mismo que dice "Tienes disponible" en
+          // Inicio (incluye lo que traían de meses anteriores).
+          final now = DateTime.now();
+          final available = cashSummaryUntil(
+            values[3] as List<Income>,
+            all,
+            values[4] as CashCheck?,
+            people.length,
+            DateTime(now.year, now.month, now.day),
+          ).free;
           final goalIds = goals.map((g) => g.id).toSet();
           // Aportes de metas que se eliminaron sin decidir qué hacer con ellos.
           final orphans = savings
@@ -105,7 +111,7 @@ class GoalsPage extends StatelessWidget {
           color: ok ? incomeColor : expenseColor,
         ),
         title: const Text('Disponible para aportar'),
-        subtitle: const Text('El sobrante de este mes'),
+        subtitle: const Text('Lo mismo que "Tienes disponible" en Inicio'),
         trailing: Text(
           money(ok ? available : 0),
           style: TextStyle(
@@ -128,6 +134,9 @@ class GoalsPage extends StatelessWidget {
     double available,
   ) {
     final saved = contributions.fold(0.0, (a, e) => a + e.value);
+    final used = contributions
+        .where((e) => e.value < 0)
+        .fold(0.0, (a, e) => a - e.value);
     final progress = goal.target <= 0 ? 0.0 : (saved / goal.target);
     final done = progress >= 1;
 
@@ -195,10 +204,26 @@ class GoalsPage extends StatelessWidget {
                   'Faltan ${money(goal.target - saved)}',
                   style: const TextStyle(color: Colors.grey),
                 ),
+              if (used > 0)
+                Text(
+                  'Ya usaste ${money(used)} de esta meta',
+                  style: const TextStyle(color: Colors.grey),
+                ),
+              if (saved > 0.004)
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: TextButton.icon(
+                    style: TextButton.styleFrom(padding: EdgeInsets.zero),
+                    icon: const Icon(Icons.shopping_bag_outlined),
+                    label: const Text('Usé este dinero'),
+                    onPressed: () =>
+                        _useMoney(context, db, goal, saved, people),
+                  ),
+                ),
               if (contributions.isNotEmpty)
                 Text(
                   '${contributions.length} '
-                  '${contributions.length == 1 ? 'aporte' : 'aportes'} · '
+                  '${contributions.length == 1 ? 'movimiento' : 'movimientos'} · '
                   'toca para verlos o corregirlos',
                   style: const TextStyle(color: Colors.grey, fontSize: 12),
                 ),
@@ -358,7 +383,7 @@ class GoalsPage extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
               child: Text(
-                'Aportes a "${goal.name}"',
+                'Movimientos de "${goal.name}"',
                 style: Theme.of(
                   context,
                 ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
@@ -380,34 +405,77 @@ class GoalsPage extends StatelessWidget {
                   padding: const EdgeInsets.only(bottom: 24),
                   children: [
                     for (final e in sorted)
-                      ListTile(
-                        leading: const CategoryAvatar(ahorroCategory, size: 40),
-                        title: Text(
-                          money(e.value),
-                          style: const TextStyle(fontWeight: FontWeight.w700),
-                        ),
-                        subtitle: Text(
-                          '${e.day}/${e.month}/${e.year} · '
-                          '${personName(people, e.paidBy)}',
-                        ),
-                        trailing: IconButton(
-                          tooltip: 'Quitar aporte',
-                          icon: const Icon(Icons.delete_outline),
-                          onPressed: () async {
-                            if (await confirmDialog(
-                              sheetContext,
-                              '¿Quitar este aporte de ${money(e.value)}? '
-                              'Ese dinero vuelve a estar disponible.',
-                              confirm: 'Quitar',
-                            )) {
-                              await db.delete(e.id);
-                              if (sheetContext.mounted) {
-                                Navigator.of(sheetContext).pop();
-                              }
-                            }
-                          },
-                        ),
-                      ),
+                      e.value < 0
+                          // Uso del dinero de la meta.
+                          ? ListTile(
+                              leading: const CircleAvatar(
+                                child: Icon(Icons.shopping_bag_outlined),
+                              ),
+                              title: Text(
+                                '− ${money(-e.value)}',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                  color: expenseColor,
+                                ),
+                              ),
+                              subtitle: Text(
+                                '${e.day}/${e.month}/${e.year} · '
+                                '${e.description}',
+                              ),
+                              trailing: IconButton(
+                                tooltip: 'Deshacer',
+                                icon: const Icon(Icons.undo),
+                                onPressed: () async {
+                                  if (await confirmDialog(
+                                    sheetContext,
+                                    '¿Deshacer este uso de ${money(-e.value)}? '
+                                    'El dinero vuelve a la meta y se borra el '
+                                    'gasto que pagaste con él.',
+                                    confirm: 'Deshacer',
+                                  )) {
+                                    await db.undoGoalUse(e);
+                                    if (sheetContext.mounted) {
+                                      Navigator.of(sheetContext).pop();
+                                    }
+                                  }
+                                },
+                              ),
+                            )
+                          : ListTile(
+                              leading: const CategoryAvatar(
+                                ahorroCategory,
+                                size: 40,
+                              ),
+                              title: Text(
+                                '+ ${money(e.value)}',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                              subtitle: Text(
+                                people.length > 1
+                                    ? '${e.day}/${e.month}/${e.year} · '
+                                          'aportó ${personName(people, e.paidBy)}'
+                                    : '${e.day}/${e.month}/${e.year} · aporte',
+                              ),
+                              trailing: IconButton(
+                                tooltip: 'Quitar aporte',
+                                icon: const Icon(Icons.delete_outline),
+                                onPressed: () async {
+                                  if (await confirmDialog(
+                                    sheetContext,
+                                    '¿Quitar este aporte de ${money(e.value)}? '
+                                    'Ese dinero vuelve a estar disponible.',
+                                    confirm: 'Quitar',
+                                  )) {
+                                    await db.delete(e.id);
+                                    if (sheetContext.mounted) {
+                                      Navigator.of(sheetContext).pop();
+                                    }
+                                  }
+                                },
+                              ),
+                            ),
                   ],
                 ),
               ),
@@ -463,7 +531,7 @@ class GoalsPage extends StatelessWidget {
       },
       fields: [
         const DialogField('Monto', number: true),
-        DialogField('Quién aporta', options: people),
+        if (people.length > 1) DialogField('Quién aporta', options: people),
       ],
     );
     if (values == null) return;
@@ -472,8 +540,53 @@ class GoalsPage extends StatelessWidget {
       parseAmount(values[0])!,
       DateTime.now(),
       'Meta: ${goal.name}',
-      paidBy: people.indexOf(values[1]),
+      paidBy: people.length > 1 ? people.indexOf(values[1]) : 0,
       goalId: goal.id,
+    );
+  }
+
+  /// Anota un gasto pagado con el dinero apartado en la meta (ej. los
+  /// pasajes del viaje). No se resta dos veces: sale de la meta, no de lo
+  /// disponible.
+  Future<void> _useMoney(
+    BuildContext context,
+    ExpensesRepository db,
+    Goal goal,
+    double saved,
+    List<String> people,
+  ) async {
+    final values = await showFieldsDialog(
+      context,
+      title: 'Usar el dinero de "${goal.name}"',
+      confirm: 'Guardar',
+      hint:
+          'Se anota como gasto y sale de lo que tienes en esta meta '
+          '(${money(saved)}). Lo disponible no cambia, porque ese dinero ya '
+          'estaba apartado.',
+      validate: (values) {
+        final amount = parseAmount(values[1])!;
+        if (amount <= 0) return 'El monto debe ser mayor a 0';
+        if (amount > saved + 0.001) {
+          return 'En esta meta solo hay ${money(saved)}';
+        }
+        return null;
+      },
+      fields: [
+        DialogField('¿En qué lo usaste? (ej. Pasajes)', initial: goal.name),
+        DialogField('Monto', initial: saved.toStringAsFixed(2), number: true),
+        DialogField('Categoría', initial: 'Ocio', options: expenseCategories),
+        if (people.length > 1) DialogField('Quién pagó', options: people),
+      ],
+    );
+    if (values == null) return;
+    final description = values[0].trim();
+    await db.useGoalMoney(
+      goal.id,
+      parseAmount(values[1])!,
+      values[2],
+      description.isEmpty ? goal.name : description,
+      DateTime.now(),
+      paidBy: people.length > 1 ? people.indexOf(values[3]) : 0,
     );
   }
 }
