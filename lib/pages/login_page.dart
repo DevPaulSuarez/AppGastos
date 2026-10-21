@@ -45,7 +45,7 @@ class _LoginPageState extends State<LoginPage> {
             ),
             Text(
               "Control De Gastos",
-              style: Theme.of(context).textTheme.headline4,
+              style: Theme.of(context).textTheme.headlineMedium,
             ),
             const Padding(
               padding: EdgeInsets.all(32.0),
@@ -53,7 +53,7 @@ class _LoginPageState extends State<LoginPage> {
             ),
             Text(
               "Tu asesor de finanzas personal",
-              style: Theme.of(context).textTheme.overline,
+              style: Theme.of(context).textTheme.labelSmall,
             ),
             const Expanded(
               flex: 1,
@@ -76,7 +76,7 @@ class _LoginPageState extends State<LoginPage> {
                           ),
                         ),
                       ElevatedButton(
-                        style: ElevatedButton.styleFrom(primary: Colors.green),
+                        style: ElevatedButton.styleFrom(backgroundColor: Colors.green, foregroundColor: Colors.white),
                         child: const Text("Iniciar Sesion con Google"),
                         onPressed: () {
                           Provider.of<LoginState>(context, listen: false).login();
@@ -95,7 +95,7 @@ class _LoginPageState extends State<LoginPage> {
               child: RichText(
                 textAlign: TextAlign.center,
                 text: TextSpan(
-                    style: Theme.of(context).textTheme.bodyText1,
+                    style: Theme.of(context).textTheme.bodyLarge,
                     text: "Para utilizar esta aplicación, debe aceptar nuestra",
                     children: [
                       TextSpan(
@@ -103,7 +103,7 @@ class _LoginPageState extends State<LoginPage> {
                         recognizer: _recognizer1,
                         style: Theme.of(context)
                             .textTheme
-                            .bodyText1
+                            .bodyLarge
                             ?.copyWith(fontWeight: FontWeight.bold),
                       ),
                       const TextSpan(text: " y "),
@@ -112,7 +112,7 @@ class _LoginPageState extends State<LoginPage> {
                         recognizer: _recognizer2,
                         style: Theme.of(context)
                             .textTheme
-                            .bodyText1
+                            .bodyLarge
                             ?.copyWith(fontWeight: FontWeight.bold),
                       ),
                     ]),
