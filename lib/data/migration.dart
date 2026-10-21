@@ -28,10 +28,16 @@ Future<int> moveLocalDataToCloud(
   final key = 'migrated_to_$userId';
   if (prefs.getBool(key) ?? false) return 0;
 
-  // Una cuenta que ya tiene configuración en la nube no se sobrescribe.
+  // Una cuenta que ya se usa en la nube (con nombres, gastos o ingresos) no
+  // se sobrescribe. Solo la moneda no cuenta: se elige antes de todo lo
+  // demás y no debe impedir subir los datos de otro teléfono.
   final cloudSettings = await cloud.watch('settings').first;
+  final inUse =
+      cloudSettings.any((d) => d.id == 'people') ||
+      (await cloud.watch('expenses').first).isNotEmpty ||
+      (await cloud.watch('incomes').first).isNotEmpty;
   var moved = 0;
-  if (cloudSettings.isEmpty) {
+  if (!inUse) {
     for (final collection in appCollections) {
       final docs = await local.watch(collection).first;
       if (docs.isEmpty) continue;

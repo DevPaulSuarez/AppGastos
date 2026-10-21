@@ -83,6 +83,19 @@ void main() {
     },
   );
 
+  test('si en la nube solo está la moneda, igual se suben los datos', () async {
+    final local = LocalStore();
+    await local.set('settings', 'people', {
+      'names': ['Paul'],
+    });
+    await local.set('incomes', 'i1', {'description': 'Sueldo', 'amount': 500});
+    final cloud = _MemoryStore();
+    await cloud.set('settings', 'currency', {'code': 'USD'});
+
+    expect(await moveLocalDataToCloud(local, cloud, 'paul'), 2);
+    expect(cloud.data['incomes']!.length, 1);
+  });
+
   test('una cuenta que ya tiene datos en la nube no se sobrescribe', () async {
     final local = LocalStore();
     await local.set('settings', 'people', {
