@@ -42,7 +42,8 @@ const Map<String, Color> _builtInColors = {
   "Vivienda": Color(0xFF0D9488),
   "Comida": Color(0xFFF59E0B),
   "Servicios": Color(0xFF0891B2),
-  "Transporte": Color(0xFF3B82F6),
+  // Naranja: el azul es del ahorro y en el gráfico se confundían.
+  "Transporte": Color(0xFFF97316),
   "Salud": Color(0xFFE11D48),
   "Hogar": Color(0xFF92400E),
   "Suscripciones": Color(0xFF7C3AED),

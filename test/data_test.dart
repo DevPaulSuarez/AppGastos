@@ -11,6 +11,7 @@ import 'package:primera_app_curso/data/demo_data.dart';
 import 'package:primera_app_curso/report.dart';
 import 'package:primera_app_curso/finance_repository.dart';
 import 'package:primera_app_curso/models.dart';
+import 'package:primera_app_curso/utils.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
@@ -586,6 +587,18 @@ void main() {
             .fold(0.0, (a, e) => a + e.value),
         300);
     expect(await finance.freeMoneyToday(today: today), 300);
+  });
+
+  test('recordatorio: el próximo viernes a las 7 p. m.', () {
+    // Martes 20 de octubre → viernes 23.
+    expect(nextWeekdayAt(DateTime(2026, 10, 20, 10), DateTime.friday, 19),
+        DateTime(2026, 10, 23, 19));
+    // Viernes antes de las 7: ese mismo día.
+    expect(nextWeekdayAt(DateTime(2026, 10, 23, 8), DateTime.friday, 19),
+        DateTime(2026, 10, 23, 19));
+    // Viernes después de las 7: el siguiente.
+    expect(nextWeekdayAt(DateTime(2026, 10, 23, 20), DateTime.friday, 19),
+        DateTime(2026, 10, 30, 19));
   });
 
   test('solo se puede aportar lo que sobra', () {

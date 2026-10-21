@@ -19,6 +19,7 @@ import 'package:primera_app_curso/utils.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:timezone/data/latest_all.dart' as tz;
+import 'package:timezone/timezone.dart' show TZDateTime, UTC;
 
 class Inicio extends StatefulWidget {
   const Inicio({Key? key}) : super(key: key);
@@ -547,6 +548,32 @@ class _InicioState extends State<Inicio> {
       repeatInterval: RepeatInterval.daily,
       notificationDetails: platformChannelSpecifics,
       androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+    );
+
+    // Cada viernes a las 7 p. m. (día de pago): comparar con el banco. Se
+    // programa a la hora exacta del teléfono pasada a UTC, así repite cada
+    // semana a la misma hora sin depender de la zona horaria configurada.
+    await flutterLocalNotificationsPlugin.zonedSchedule(
+      id: 2,
+      title: '¿Comparamos con tu banco?',
+      body:
+          'Revisa que lo que dice la app sea lo que tienes de verdad: toca la '
+          'tarjeta verde → Comparar con mi banco.',
+      scheduledDate: TZDateTime.from(
+        nextWeekdayAt(DateTime.now(), DateTime.friday, 19),
+        UTC,
+      ),
+      notificationDetails: const NotificationDetails(
+        android: AndroidNotificationDetails(
+          'recordatorio_banco',
+          'Comparar con el banco',
+          channelDescription:
+              'Recordatorio semanal para revisar que la app coincida con el '
+              'dinero real',
+        ),
+      ),
+      androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+      matchDateTimeComponents: DateTimeComponents.dayOfWeekAndTime,
     );
   }
 }
