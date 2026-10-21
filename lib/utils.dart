@@ -32,5 +32,15 @@ double? parseAmount(String text) =>
 /// Nombre de la persona, o "Sin asignar" si el índice no es válido.
 String personName(List<String> people, int? index) =>
     index != null && index >= 0 && index < people.length
-        ? people[index]
-        : 'Sin asignar';
+    ? people[index]
+    : 'Sin asignar';
+
+/// Próxima vez que toca [weekday] (1 = lunes) a las [hour] en punto, desde
+/// [now] (incluido hoy si todavía no pasó esa hora).
+DateTime nextWeekdayAt(DateTime now, int weekday, int hour) {
+  var date = DateTime(now.year, now.month, now.day, hour);
+  while (date.weekday != weekday || !date.isAfter(now)) {
+    date = DateTime(date.year, date.month, date.day + 1, hour);
+  }
+  return date;
+}
