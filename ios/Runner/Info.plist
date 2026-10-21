@@ -66,5 +66,21 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+	<key>GIDClientID</key>
+	<string>350738405586-6oc6348bqn9h0of1ojl9bahpeha3rqjf.apps.googleusercontent.com</string>
+	<key>GIDServerClientID</key>
+	<string>350738405586-c0j9a9umpctbhmbb7u2ef64mth0lfl9e.apps.googleusercontent.com</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<!-- Para volver a la app después de iniciar sesión con Google. -->
+				<string>com.googleusercontent.apps.350738405586-6oc6348bqn9h0of1ojl9bahpeha3rqjf</string>
+			</array>
+		</dict>
+	</array>
 </dict>
 </plist>

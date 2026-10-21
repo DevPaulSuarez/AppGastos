@@ -92,6 +92,20 @@ class FirestoreStore implements Store {
       await _collection(collection).doc(id).delete();
     }
   }
+
+  /// Guarda varios documentos de una vez, en tandas (Firestore acepta hasta
+  /// 500 cambios por tanda).
+  Future<void> setMany(
+      String collection, Map<String, Map<String, dynamic>> data) async {
+    final entries = data.entries.toList();
+    for (var i = 0; i < entries.length; i += 400) {
+      final batch = FirebaseFirestore.instance.batch();
+      for (final e in entries.skip(i).take(400)) {
+        batch.set(_collection(collection).doc(e.key), e.value);
+      }
+      await batch.commit();
+    }
+  }
 }
 
 /// Guarda los datos en el propio dispositivo (modo pruebas).

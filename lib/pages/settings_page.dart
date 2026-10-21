@@ -251,7 +251,20 @@ class _SettingsPageState extends State<SettingsPage> {
                     'nube cambia modoPruebas a false en lib/config.dart.',
                   ),
                 )
-              else
+              else ...[
+                ListTile(
+                  leading: const Icon(Icons.cloud_done_outlined),
+                  title: Text(
+                    Provider.of<LoginState>(
+                          context,
+                          listen: false,
+                        ).currentUser().email ??
+                        'Tu cuenta de Google',
+                  ),
+                  subtitle: const Text(
+                    'Tus datos están guardados en la nube con esta cuenta',
+                  ),
+                ),
                 ListTile(
                   leading: const Icon(Icons.logout, color: expenseColor),
                   title: const Text(
@@ -270,6 +283,7 @@ class _SettingsPageState extends State<SettingsPage> {
                     }
                   },
                 ),
+              ],
             ],
           );
         },

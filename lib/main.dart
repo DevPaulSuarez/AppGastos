@@ -1,6 +1,7 @@
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:primera_app_curso/add_page_transicion.dart';
+import 'package:primera_app_curso/data/migration.dart';
 import 'package:primera_app_curso/data/store.dart';
 import 'package:primera_app_curso/expenses_repository.dart';
 import 'package:primera_app_curso/finance_repository.dart';
@@ -22,6 +23,7 @@ import 'package:provider/provider.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 
 import 'config.dart';
+import 'firebase_options.dart';
 import 'pages/detail_page_container.dart';
 
 void main() async {
@@ -29,7 +31,9 @@ void main() async {
   // En modo pruebas no se usa Firebase (así también corre en iPhone, que aún
   // no tiene su archivo de configuración de Firebase).
   if (!modoPruebas) {
-    await Firebase.initializeApp();
+    await Firebase.initializeApp(
+      options: DefaultFirebaseOptions.currentPlatform,
+    );
   }
   runApp(const Miapp());
 }
@@ -57,7 +61,9 @@ class Miapp extends StatelessWidget {
               }
               return FirestoreStore(uid);
             }
-            throw Exception('User not logged in');
+            // Sin sesión no se muestra ningún dato; mientras se cierra la
+            // sesión se mantiene el anterior para no romper la pantalla.
+            return previous ?? LocalStore();
           }),
         ProxyProvider<Store, ExpensesRepository>(
           update: (_, store, previous) => previous?.store == store
@@ -131,13 +137,70 @@ class Miapp extends StatelessWidget {
             }
             var state = Provider.of<LoginState>(context);
             if (state.isLoggedIn()) {
-              return const _AccountGate();
+              return _CloudReady(
+                key: ValueKey(state.currentUser().uid),
+                userId: state.currentUser().uid,
+              );
             } else {
               return const LoginPage();
             }
           },
         },
       ),
+    );
+  }
+}
+
+/// Al iniciar sesión por primera vez en este teléfono, sube a la nube lo que
+/// se tenía guardado en el teléfono; después sigue como siempre.
+class _CloudReady extends StatefulWidget {
+  final String userId;
+
+  const _CloudReady({super.key, required this.userId});
+
+  @override
+  State<_CloudReady> createState() => _CloudReadyState();
+}
+
+class _CloudReadyState extends State<_CloudReady> {
+  late final Future<int> _moving;
+
+  @override
+  void initState() {
+    super.initState();
+    final cloud = Provider.of<Store>(context, listen: false);
+    _moving = moveLocalDataToCloud(
+      LocalStore(),
+      cloud,
+      widget.userId,
+      setMany: cloud is FirestoreStore ? cloud.setMany : null,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<int>(
+      future: _moving,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState != ConnectionState.done) {
+          return const Scaffold(
+            body: Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  CircularProgressIndicator(),
+                  SizedBox(height: 16),
+                  Text('Subiendo tus datos a la nube…'),
+                ],
+              ),
+            ),
+          );
+        }
+        if (snapshot.hasError) {
+          debugPrint('No se pudieron subir los datos: ${snapshot.error}');
+        }
+        return const _AccountGate();
+      },
     );
   }
 }

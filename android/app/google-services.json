@@ -1,43 +1,49 @@
 {
   "project_info": {
-    "project_number": "210281568032",
-    "firebase_url": "https://control-gasto-pess-default-rtdb.firebaseio.com",
-    "project_id": "control-gasto-pess",
-    "storage_bucket": "control-gasto-pess.appspot.com"
+    "project_number": "350738405586",
+    "project_id": "control-gastos-paul",
+    "storage_bucket": "control-gastos-paul.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:210281568032:android:2b04a85e4ddf6ab931a945",
+        "mobilesdk_app_id": "1:350738405586:android:e4ca3bc8f6aa7210c6b50b",
         "android_client_info": {
           "package_name": "com.example.primera_app_curso"
         }
       },
       "oauth_client": [
         {
-          "client_id": "210281568032-rvqpnl5hdl2inpe6683o4c57ib78m0md.apps.googleusercontent.com",
+          "client_id": "350738405586-6u29d6knpbin4ddk2vop1sacbomgh0ml.apps.googleusercontent.com",
           "client_type": 1,
           "android_info": {
             "package_name": "com.example.primera_app_curso",
-            "certificate_hash": "a89cd1dc5fbc5ec3a33c3b401394cbfbcc4e536e"
+            "certificate_hash": "676f0fa33b5fa97b496f68b2eefbccfa48fe10d7"
           }
         },
         {
-          "client_id": "210281568032-b5vfba159ktp9kesc7841702bm43d8q0.apps.googleusercontent.com",
+          "client_id": "350738405586-c0j9a9umpctbhmbb7u2ef64mth0lfl9e.apps.googleusercontent.com",
           "client_type": 3
         }
       ],
       "api_key": [
         {
-          "current_key": "AIzaSyAEU8_vTPf8ysN83Z81zJsNFIgmVNZnUec"
+          "current_key": "AIzaSyD266ioLTEJC_KvyjCFHIyLXq0gugQawcE"
         }
       ],
       "services": {
         "appinvite_service": {
           "other_platform_oauth_client": [
             {
-              "client_id": "210281568032-b5vfba159ktp9kesc7841702bm43d8q0.apps.googleusercontent.com",
+              "client_id": "350738405586-c0j9a9umpctbhmbb7u2ef64mth0lfl9e.apps.googleusercontent.com",
               "client_type": 3
+            },
+            {
+              "client_id": "350738405586-6oc6348bqn9h0of1ojl9bahpeha3rqjf.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.primeraAppCurso"
+              }
             }
           ]
         }
