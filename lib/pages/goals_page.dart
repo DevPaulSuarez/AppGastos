@@ -108,7 +108,7 @@ class GoalsPage extends StatelessWidget {
       child: ListTile(
         leading: Icon(
           Icons.account_balance_wallet_outlined,
-          color: ok ? incomeColor : expenseColor,
+          color: ok ? context.money.income : context.money.expense,
         ),
         title: const Text('Disponible para aportar'),
         subtitle: const Text('Lo mismo que "Tienes disponible" en Inicio'),
@@ -117,7 +117,7 @@ class GoalsPage extends StatelessWidget {
           style: TextStyle(
             fontSize: 16,
             fontWeight: FontWeight.w800,
-            color: ok ? incomeColor : expenseColor,
+            color: ok ? context.money.income : context.money.expense,
           ),
         ),
       ),
@@ -154,7 +154,7 @@ class GoalsPage extends StatelessWidget {
                 children: [
                   Icon(
                     done ? Icons.emoji_events : Icons.savings,
-                    color: done ? warningColor : incomeColor,
+                    color: done ? context.money.warning : context.money.income,
                   ),
                   const SizedBox(width: 8),
                   Expanded(
@@ -179,7 +179,7 @@ class GoalsPage extends StatelessWidget {
                 value: progress.clamp(0.0, 1.0),
                 minHeight: 10,
                 borderRadius: BorderRadius.circular(5),
-                color: done ? warningColor : incomeColor,
+                color: done ? context.money.warning : context.money.income,
                 backgroundColor: Colors.grey.withValues(alpha: 0.2),
               ),
               const SizedBox(height: 8),
@@ -248,7 +248,7 @@ class GoalsPage extends StatelessWidget {
           children: [
             Row(
               children: [
-                const Icon(Icons.help_outline, color: warningColor),
+                Icon(Icons.help_outline, color: context.money.warning),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
@@ -413,9 +413,9 @@ class GoalsPage extends StatelessWidget {
                               ),
                               title: Text(
                                 '− ${money(-e.value)}',
-                                style: const TextStyle(
+                                style: TextStyle(
                                   fontWeight: FontWeight.w700,
-                                  color: expenseColor,
+                                  color: context.money.expense,
                                 ),
                               ),
                               subtitle: Text(

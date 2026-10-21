@@ -35,15 +35,22 @@ abstract class Store {
 }
 
 class FirestoreStore implements Store {
+  /// De quién son los datos: el id de la persona (cuenta personal) o
+  /// "couple:<id>" (cuenta de pareja).
   final String userId;
+  final DocumentReference<Map<String, dynamic>> _root;
 
-  FirestoreStore(this.userId);
+  /// Cuenta personal: users/{id}/...
+  FirestoreStore(this.userId)
+      : _root = FirebaseFirestore.instance.collection('users').doc(userId);
+
+  /// Cuenta de pareja, compartida por los dos: couples/{id}/...
+  FirestoreStore.couple(String coupleId)
+      : userId = 'couple:$coupleId',
+        _root = FirebaseFirestore.instance.collection('couples').doc(coupleId);
 
   CollectionReference<Map<String, dynamic>> _collection(String name) =>
-      FirebaseFirestore.instance
-          .collection('users')
-          .doc(userId)
-          .collection(name);
+      _root.collection(name);
 
   @override
   Stream<List<Doc>> watch(String collection,

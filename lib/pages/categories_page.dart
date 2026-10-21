@@ -54,9 +54,10 @@ class CategoriesPage extends StatelessWidget {
                 SwitchListTile(
                   secondary: CategoryAvatar(name, size: 40),
                   title: Text(name),
-                  subtitle: protectedCategories.contains(name)
-                      ? const Text('Siempre visible')
-                      : null,
+                  subtitle: Text([
+                    if (categoryExamples[name] != null) categoryExamples[name]!,
+                    if (protectedCategories.contains(name)) 'siempre visible',
+                  ].join(' · ')),
                   value: !settings.hidden.contains(name),
                   onChanged: protectedCategories.contains(name)
                       ? null

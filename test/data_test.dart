@@ -431,6 +431,22 @@ void main() {
     categorySettings = const CategorySettings();
   });
 
+  test('las categorías que ya no están pasan a las nuevas, una vez', () async {
+    await expenses.add('Alcohol', 40, DateTime(2026, 10, 3), 'Cerveza');
+    await expenses.add('Antojitos', 12, DateTime(2026, 10, 4), 'Helado');
+    await expenses.add('Hijos', 90, DateTime(2026, 10, 5), 'Colegio');
+    await finance.setBudget('Compras', 300);
+    expect(categories.keys, isNot(contains('Alcohol')));
+    expect(categories.keys, contains('Restaurantes'));
+
+    await finance.moveRetiredCategories();
+    await finance.moveRetiredCategories();
+    final all = await expenses.queryAll().first;
+    expect(all.map((e) => e.category),
+        unorderedEquals(['Ocio', 'Restaurantes', 'Familia']));
+    expect(await finance.watchBudgets().first, {'Ropa y cuidado': 300.0});
+  });
+
   test('cambiar de moneda convierte lo anterior sin tocar lo guardado',
       () async {
     // Datos guardados antes de poder elegir moneda: están en soles.

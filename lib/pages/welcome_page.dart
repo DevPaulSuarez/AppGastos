@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:primera_app_curso/config.dart';
 import 'package:primera_app_curso/finance_repository.dart';
 import 'package:provider/provider.dart';
 
@@ -91,6 +92,18 @@ class _WelcomePageState extends State<WelcomePage> {
                           color: scheme.onSurfaceVariant,
                         ),
                       ),
+                      // Con la nube, la pareja puede unirse con el código
+                      // que le enviaron.
+                      if (!modoPruebas) ...[
+                        const SizedBox(height: 12),
+                        TextButton.icon(
+                          icon: const Icon(Icons.vpn_key_outlined),
+                          label: const Text('Tengo un código de invitación'),
+                          onPressed: _saving
+                              ? null
+                              : () => Navigator.of(context).pushNamed('/join'),
+                        ),
+                      ],
                       const Spacer(),
                     ],
                   ),

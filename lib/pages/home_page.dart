@@ -12,6 +12,7 @@ import 'package:primera_app_curso/finance_repository.dart';
 import 'package:primera_app_curso/models.dart';
 import 'package:primera_app_curso/month_widge.dart';
 import 'package:primera_app_curso/pages/balance_page.dart';
+import 'package:primera_app_curso/pages/couple/couple_pages.dart';
 import 'package:primera_app_curso/pages/report_page.dart';
 import 'package:primera_app_curso/pages/ui/multi_stream_builder.dart';
 import 'package:primera_app_curso/theme.dart';
@@ -76,6 +77,11 @@ class _InicioState extends State<Inicio> {
 
     // Registra los sueldos y gastos fijos del mes si todavía no están.
     Provider.of<FinanceRepository>(context, listen: false).applyRecurring();
+    // Gastos en categorías que la app ya no trae pasan a las nuevas.
+    Provider.of<FinanceRepository>(
+      context,
+      listen: false,
+    ).moveRetiredCategories();
 
     DateTime? first(Iterable<DateTime> months) =>
         months.isEmpty ? null : months.reduce((a, b) => a.isBefore(b) ? a : b);
@@ -236,6 +242,7 @@ class _InicioState extends State<Inicio> {
       child: Column(
         children: <Widget>[
           _selector(),
+          const CoupleNotices(),
           Expanded(
             child: MultiStreamBuilder(
               key: ValueKey(
@@ -364,7 +371,7 @@ class _InicioState extends State<Inicio> {
       visualDensity: VisualDensity.compact,
       icon: Icon(
         danger ? Icons.error : Icons.speed,
-        color: danger ? expenseColor : warningColor,
+        color: danger ? context.money.expense : context.money.warning,
       ),
       onPressed: _showAlert ? _hideAlert : _revealAlert,
     );

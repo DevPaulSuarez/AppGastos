@@ -2,6 +2,7 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:primera_app_curso/currency.dart';
 import 'package:primera_app_curso/categories.dart';
+import 'package:primera_app_curso/theme.dart';
 
 /// Dona con el gasto por categoría. El total va en el centro y cada porción
 /// muestra su porcentaje; las categorías pequeñas se agrupan en "Otros".
@@ -128,7 +129,12 @@ class LinesGraphWidget extends StatelessWidget {
 
   /// Partes de la barra de un día: cada categoría con su color, de la que
   /// más se gastó en el mes (abajo) a la que menos, y el ahorro arriba.
-  List<BarChartRodStackItem> _stack(int i, List<String> order, Color spend) {
+  List<BarChartRodStackItem> _stack(
+    int i,
+    List<String> order,
+    Color spend,
+    Color saving,
+  ) {
     final items = <BarChartRodStackItem>[];
     var from = 0.0;
     final day = byCategory?[i];
@@ -147,7 +153,7 @@ class LinesGraphWidget extends StatelessWidget {
     }
     if (_savedAt(i) > 0) {
       items.add(
-        BarChartRodStackItem(from, from + _savedAt(i), const Color(0xFF2563EB)),
+        BarChartRodStackItem(from, from + _savedAt(i), saving),
       );
     }
     return items;
@@ -268,6 +274,7 @@ class LinesGraphWidget extends StatelessWidget {
                     i == highlight
                         ? scheme.primary
                         : scheme.primary.withValues(alpha: 0.55),
+                    context.money.savings,
                   ),
                   backDrawRodData: BackgroundBarChartRodData(
                     show: true,
@@ -380,13 +387,13 @@ class TrendChart extends StatelessWidget {
                   toY: months[i].incomes,
                   width: 10,
                   borderRadius: BorderRadius.circular(3),
-                  color: const Color(0xFF16A34A),
+                  color: context.money.income,
                 ),
                 BarChartRodData(
                   toY: months[i].expenses,
                   width: 10,
                   borderRadius: BorderRadius.circular(3),
-                  color: const Color(0xFFDC2626),
+                  color: context.money.expense,
                 ),
               ],
             ),

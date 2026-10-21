@@ -152,9 +152,9 @@ Future<void> addDemoHistory(Store store, FinanceRepository finance,
     // Otros gastos del mes
     repeat(between(2, 3), 'Ocio', ['Restaurante', 'Cine', 'Salida con amigos'],
         50, 160);
-    repeat(between(3, 5), 'Antojitos', ['Café', 'Helado', 'Postre'], 6, 25);
+    repeat(between(3, 5), 'Restaurantes', ['Café', 'Helado', 'Postre'], 6, 25);
     repeat(between(0, 2), 'Salud', ['Farmacia', 'Consulta médica'], 25, 150);
-    repeat(between(1, 2), 'Compras', ['Ropa', 'Zapatillas', 'Regalo'], 60, 250);
+    repeat(between(1, 2), 'Ropa y cuidado', ['Ropa', 'Zapatillas', 'Regalo'], 60, 250);
     repeat(between(0, 1), 'Hogar', ['Limpieza', 'Utensilios de cocina'], 40, 180);
 
     // Aportes a sus metas de ahorro, a fin de mes.

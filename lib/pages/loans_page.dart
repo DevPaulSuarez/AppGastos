@@ -55,9 +55,9 @@ class LoansPage extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
             children: [
               if (pending.isEmpty)
-                const Card(
+                Card(
                   child: ListTile(
-                    leading: Icon(Icons.check_circle, color: incomeColor),
+                    leading: Icon(Icons.check_circle, color: context.money.income),
                     title: Text('Ya les devolvieron todo'),
                   ),
                 ),
@@ -75,8 +75,8 @@ class LoansPage extends StatelessWidget {
                       ),
                       Text(
                         'Debe ${money(entry.value.fold(0.0, (a, e) => a + e.pending))}',
-                        style: const TextStyle(
-                            fontWeight: FontWeight.w800, color: warningColor),
+                        style: TextStyle(
+                            fontWeight: FontWeight.w800, color: context.money.warning),
                       ),
                     ],
                   ),
@@ -104,8 +104,8 @@ class LoansPage extends StatelessWidget {
                     children: [
                       for (final loan in paid)
                         ListTile(
-                          leading: const Icon(Icons.check_circle,
-                              color: incomeColor),
+                          leading: Icon(Icons.check_circle,
+                              color: context.money.income),
                           title: Text(loan.description),
                           subtitle: Text('${loan.owedBy} · ${_date(loan)}'),
                           trailing: Text(money(loan.value)),

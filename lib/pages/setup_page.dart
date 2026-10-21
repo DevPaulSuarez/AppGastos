@@ -25,13 +25,13 @@ class SetupPage extends StatefulWidget {
 const _suggestions = [
   ('Alquiler', 'Vivienda', Icons.home_rounded),
   ('Celular', 'Servicios', Icons.phone_iphone),
-  ('Alquiler de carro', 'Transporte', Icons.directions_car_outlined),
+  ('Seguro de carro', 'Transporte', Icons.directions_car_outlined),
   ('Luz', 'Servicios', Icons.bolt),
   ('Agua', 'Servicios', Icons.water_drop_outlined),
   ('Internet', 'Servicios', Icons.wifi),
-  ('Seguro', 'Salud', Icons.health_and_safety_outlined),
+  ('Seguro de salud', 'Salud', Icons.health_and_safety_outlined),
   ('Streaming', 'Suscripciones', Icons.subscriptions_outlined),
-  ('Colegio', 'Hijos', Icons.school_outlined),
+  ('Colegio', 'Educación', Icons.school_outlined),
 ];
 
 class _SetupPageState extends State<SetupPage> {
@@ -128,7 +128,7 @@ class _SetupPageState extends State<SetupPage> {
           : 'Agreguen los ingresos de cada uno con su fecha. Si alguien no '
                 'tiene ingresos fijos, déjenlo vacío.',
       'Los pagos fijos: los que se pagan una sola vez al mes, como el '
-          'alquiler, el celular o el alquiler del carro. Toca uno para '
+          'alquiler, el celular o el seguro del carro. Toca uno para '
           'agregarlo con su monto y su día.',
       solo
           ? 'Todo lo que tienes ahora en el banco y en efectivo: lo que te '
@@ -570,14 +570,14 @@ class _SetupPageState extends State<SetupPage> {
               ),
             ),
             const SizedBox(height: 8),
-            row('Ingresos', money(income), color: incomeColor),
-            row('Pagos fijos', '− ${money(fixed)}', color: expenseColor),
+            row('Ingresos', money(income), color: context.money.income),
+            row('Pagos fijos', '− ${money(fixed)}', color: context.money.expense),
             const Divider(),
             row(
               'Libre para lo demás',
               money(free),
               bold: true,
-              color: free < 0 ? expenseColor : null,
+              color: free < 0 ? context.money.expense : null,
             ),
             const SizedBox(height: 4),
             Text(

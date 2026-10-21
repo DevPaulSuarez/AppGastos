@@ -1,6 +1,7 @@
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:primera_app_curso/add_page_transicion.dart';
+import 'package:primera_app_curso/couple/space_state.dart';
 import 'package:primera_app_curso/data/migration.dart';
 import 'package:primera_app_curso/data/store.dart';
 import 'package:primera_app_curso/expenses_repository.dart';
@@ -9,6 +10,7 @@ import 'package:primera_app_curso/login_state.dart';
 import 'package:primera_app_curso/pages/add_page.dart';
 import 'package:primera_app_curso/pages/balance_page.dart';
 import 'package:primera_app_curso/pages/categories_page.dart';
+import 'package:primera_app_curso/pages/couple/couple_pages.dart';
 import 'package:primera_app_curso/pages/goals_page.dart';
 import 'package:primera_app_curso/pages/home_page.dart';
 import 'package:primera_app_curso/pages/loans_page.dart';
@@ -49,17 +51,27 @@ class Miapp extends StatelessWidget {
           ChangeNotifierProvider<LoginState>(
             create: (BuildContext context) => LoginState(),
           ),
+        // Qué cuenta está activa: la personal o la de pareja.
+        if (modoPruebas)
+          ChangeNotifierProvider<SpaceState>(create: (_) => SpaceState())
+        else
+          ChangeNotifierProxyProvider<LoginState, SpaceState>(
+            create: (_) => SpaceState(),
+            update: (_, login, space) => space!
+              ..setUser(login.isLoggedIn() ? login.currentUser().uid : null),
+          ),
         if (modoPruebas)
           Provider<Store>(create: (_) => LocalStore())
         else
-          ProxyProvider<LoginState, Store>(
-              update: (_, LoginState value, Store? previous) {
-            if (value.isLoggedIn()) {
-              final uid = value.currentUser().uid;
-              if (previous is FirestoreStore && previous.userId == uid) {
+          ProxyProvider2<LoginState, SpaceState, Store>(
+              update: (_, LoginState value, SpaceState space, Store? previous) {
+            if (value.isLoggedIn() && space.uid != null) {
+              final couple = space.activeCouple;
+              final owner = couple == null ? space.uid! : 'couple:${couple.id}';
+              if (previous is FirestoreStore && previous.userId == owner) {
                 return previous;
               }
-              return FirestoreStore(uid);
+              return space.activeStore();
             }
             // Sin sesión no se muestra ningún dato; mientras se cierra la
             // sesión se mantiene el anterior para no romper la pantalla.
@@ -124,6 +136,15 @@ class Miapp extends StatelessWidget {
           } else if (settings.name == '/categories') {
             return MaterialPageRoute(
                 builder: (BuildContext context) => const CategoriesPage());
+          } else if (settings.name == '/invite') {
+            return MaterialPageRoute(
+                builder: (BuildContext context) => const InvitePage());
+          } else if (settings.name == '/join') {
+            return MaterialPageRoute(
+                builder: (BuildContext context) => const JoinPage());
+          } else if (settings.name == '/leave') {
+            return MaterialPageRoute(
+                builder: (BuildContext context) => const LeaveCouplePage());
           } else if (settings.name == '/settings') {
             return MaterialPageRoute(
                 builder: (BuildContext context) => const SettingsPage());
@@ -137,8 +158,26 @@ class Miapp extends StatelessWidget {
             }
             var state = Provider.of<LoginState>(context);
             if (state.isLoggedIn()) {
+              final space = Provider.of<SpaceState>(context);
+              if (!space.loaded) {
+                return const Scaffold(
+                    body: Center(child: CircularProgressIndicator()));
+              }
+              // La otra persona salió de la pareja: antes de seguir, con
+              // cuánto dinero se queda esta.
+              final keep = space.pendingKeep;
+              if (keep != null) return KeepMoneyPage(couple: keep);
+              // Pidió unirse a alguien y todavía no lo aceptan.
+              final request = space.myJoinRequest;
+              if (request != null &&
+                  request.status == 'requested' &&
+                  space.activeCouple == null) {
+                return WaitingPage(request: request);
+              }
+              // La clave cambia al formar o terminar la pareja: así toda la
+              // app se vuelve a armar con la cuenta correcta.
               return _CloudReady(
-                key: ValueKey(state.currentUser().uid),
+                key: ValueKey('${state.currentUser().uid}-${space.spaceKey}'),
                 userId: state.currentUser().uid,
               );
             } else {
@@ -168,12 +207,13 @@ class _CloudReadyState extends State<_CloudReady> {
   @override
   void initState() {
     super.initState();
-    final cloud = Provider.of<Store>(context, listen: false);
+    // Lo del teléfono va siempre a la cuenta personal.
+    final cloud = FirestoreStore(widget.userId);
     _moving = moveLocalDataToCloud(
       LocalStore(),
       cloud,
       widget.userId,
-      setMany: cloud is FirestoreStore ? cloud.setMany : null,
+      setMany: cloud.setMany,
     );
   }
 

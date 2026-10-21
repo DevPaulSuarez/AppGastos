@@ -19,18 +19,19 @@ bool isSpendingCategory(String category) =>
 /// Categorías que trae la app. Se pueden ocultar, pero no borrar.
 final Map<String, IconData> _builtInIcons = {
   "Vivienda": Icons.home_rounded,
-  "Comida": Icons.dinner_dining,
   "Servicios": Icons.bolt,
-  "Transporte": FontAwesomeIcons.busSimple.data,
+  "Comida": Icons.local_grocery_store_outlined,
+  "Restaurantes": Icons.restaurant,
+  "Transporte": Icons.directions_car_outlined,
   "Salud": Icons.medical_services_outlined,
+  "Educación": Icons.school_outlined,
+  "Familia": Icons.family_restroom,
   "Hogar": Icons.chair_outlined,
-  "Suscripciones": Icons.subscriptions_outlined,
+  "Ropa y cuidado": Icons.checkroom,
   "Ocio": Icons.local_activity_outlined,
-  "Hijos": Icons.child_care,
+  "Suscripciones": Icons.subscriptions_outlined,
   "Mascotas": Icons.pets,
-  "Compras": Icons.shopping_bag,
-  "Antojitos": FontAwesomeIcons.moneyBillWave.data,
-  "Alcohol": FontAwesomeIcons.wineBottle.data,
+  "Deudas": Icons.credit_card,
   propinaCategory: Icons.redeem,
   ahorroCategory: FontAwesomeIcons.piggyBank.data,
   "Otros": FontAwesomeIcons.infinity.data,
@@ -40,23 +41,61 @@ final Map<String, IconData> _builtInIcons = {
 /// Un color fijo por categoría, el mismo en el gráfico y en las listas.
 const Map<String, Color> _builtInColors = {
   "Vivienda": Color(0xFF0D9488),
-  "Comida": Color(0xFFF59E0B),
   "Servicios": Color(0xFF0891B2),
+  "Comida": Color(0xFFF59E0B),
+  "Restaurantes": Color(0xFFEF4444),
   // Naranja: el azul es del ahorro y en el gráfico se confundían.
   "Transporte": Color(0xFFF97316),
   "Salud": Color(0xFFE11D48),
+  "Educación": Color(0xFF4F46E5),
+  "Familia": Color(0xFF65A30D),
   "Hogar": Color(0xFF92400E),
-  "Suscripciones": Color(0xFF7C3AED),
+  "Ropa y cuidado": Color(0xFFC026D3),
   "Ocio": Color(0xFFEC4899),
-  "Hijos": Color(0xFF65A30D),
+  "Suscripciones": Color(0xFF7C3AED),
   "Mascotas": Color(0xFFB45309),
-  "Compras": Color(0xFF8B5CF6),
-  "Antojitos": Color(0xFFEF4444),
-  "Alcohol": Color(0xFFDB2777),
+  "Deudas": Color(0xFF78716C),
   propinaCategory: Color(0xFFCA8A04),
   ahorroCategory: Color(0xFF2563EB),
   "Otros": Color(0xFF64748B),
   prestamoCategory: Color(0xFF0E7490),
+};
+
+/// Ejemplos de qué va en cada categoría, para no dudar al elegir.
+const Map<String, String> categoryExamples = {
+  "Vivienda": "Alquiler, mantenimiento",
+  "Servicios": "Luz, agua, internet, celular",
+  "Comida": "Mercado, supermercado",
+  "Restaurantes": "Comer fuera, delivery, café",
+  "Transporte": "Taxi, bus, gasolina, seguro de carro",
+  "Salud": "Farmacia, consultas",
+  "Educación": "Colegio, cursos, libros",
+  "Familia": "Hijos, padres",
+  "Hogar": "Muebles, limpieza, arreglos",
+  "Ropa y cuidado": "Ropa, zapatillas, peluquería",
+  "Ocio": "Cine, salidas, fiestas, bebidas",
+  "Suscripciones": "Netflix, Spotify, gimnasio",
+  "Mascotas": "Comida, veterinario",
+  "Deudas": "Tarjeta de crédito, cuotas",
+  "Otros": "Lo que no entra en ninguna",
+  propinaCategory: "Dinero libre de cada uno",
+  ahorroCategory: "Aportes a metas y ahorro",
+};
+
+/// Categorías que ya no trae la app y a cuál pasan sus gastos. Mientras no
+/// se pasen se siguen viendo con su ícono y color de antes.
+const Map<String, String> retiredCategories = {
+  "Alcohol": "Ocio",
+  "Antojitos": "Restaurantes",
+  "Compras": "Ropa y cuidado",
+  "Hijos": "Familia",
+};
+
+final Map<String, IconData> _retiredIcons = {
+  "Alcohol": FontAwesomeIcons.wineBottle.data,
+  "Antojitos": FontAwesomeIcons.moneyBillWave.data,
+  "Compras": Icons.shopping_bag,
+  "Hijos": Icons.child_care,
 };
 
 /// Categorías que usa la app por dentro y no se pueden ocultar.
@@ -69,8 +108,7 @@ List<String> get builtInCategories =>
 final Map<String, IconData> categoryIconChoices = {
   'mascotas': Icons.pets,
   'estudios': Icons.school,
-  'hijos': Icons.child_care,
-  'bebe': Icons.baby_changing_station,
+  'familia': Icons.family_restroom,
   'gimnasio': Icons.fitness_center,
   'viajes': Icons.flight,
   'regalos': Icons.card_giftcard,
@@ -87,6 +125,12 @@ final Map<String, IconData> categoryIconChoices = {
   'deporte': Icons.sports_soccer,
   'ropa': Icons.checkroom,
   'otros': Icons.sell,
+};
+
+/// Íconos que ya no se ofrecen, para las categorías creadas con ellos.
+const Map<String, IconData> _oldIconChoices = {
+  'hijos': Icons.child_care,
+  'bebe': Icons.baby_changing_station,
 };
 
 const categoryColorChoices = [
@@ -122,7 +166,8 @@ class CustomCategory {
   Map<String, dynamic> toMap() =>
       {'name': name, 'icon': icon, 'color': color.toARGB32()};
 
-  IconData get iconData => categoryIconChoices[icon] ?? Icons.sell;
+  IconData get iconData =>
+      categoryIconChoices[icon] ?? _oldIconChoices[icon] ?? Icons.sell;
 }
 
 /// Ajustes de categorías: las creadas por el usuario y las ocultas.
@@ -176,10 +221,14 @@ CustomCategory? _custom(String name) =>
 IconData categoryIcon(String name) =>
     _builtInIcons[name] ??
     _custom(name)?.iconData ??
+    _retiredIcons[name] ??
     FontAwesomeIcons.notesMedical.data;
 
 Color categoryColor(String name) =>
-    _builtInColors[name] ?? _custom(name)?.color ?? const Color(0xFF64748B);
+    _builtInColors[name] ??
+    _custom(name)?.color ??
+    _builtInColors[retiredCategories[name]] ??
+    const Color(0xFF64748B);
 
 /// Ícono de la categoría dentro de un círculo de su color.
 class CategoryAvatar extends StatelessWidget {
