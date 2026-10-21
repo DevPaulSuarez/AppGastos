@@ -1,4 +1,5 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
+import 'package:primera_app_curso/firebase_options.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -34,6 +35,15 @@ class LoginState with ChangeNotifier {
 
   User currentUser() => _user;
 
+  /// Le dice a Google a qué proyecto de Firebase pertenece la app. En iPhone
+  /// además va el cliente propio de iOS.
+  Future<void> _initGoogleSignIn() => _googleSignIn.initialize(
+    clientId: defaultTargetPlatform == TargetPlatform.iOS
+        ? DefaultFirebaseOptions.ios.iosClientId
+        : null,
+    serverClientId: DefaultFirebaseOptions.googleServerClientId,
+  );
+
   Future<void> login() async {
     _loading = true;
     _errorMessage = null;
@@ -43,9 +53,18 @@ class LoginState with ChangeNotifier {
       _user = await _handleSignIn();
       await _prefs.setBool('isLoggedIn', true);
       _loggedIn = true;
+    } on GoogleSignInException catch (e) {
+      _loggedIn = false;
+      // Si la persona cerró la ventana de Google no es un error.
+      _errorMessage = e.code == GoogleSignInExceptionCode.canceled
+          ? null
+          : 'No se pudo iniciar sesión con Google. Inténtalo de nuevo.';
+      debugPrint('Error en login: $e');
     } catch (e) {
       _loggedIn = false;
-      _errorMessage = e.toString();
+      _errorMessage =
+          'No se pudo iniciar sesión. Revisa tu conexión a internet e '
+          'inténtalo de nuevo.';
       debugPrint('Error en login: $e');
     } finally {
       _loading = false;
@@ -55,8 +74,9 @@ class LoginState with ChangeNotifier {
 
   Future<void> logout() async {
     try {
-      await _prefs.clear();
-      await (_googleSignInInit ??= _googleSignIn.initialize());
+      // Solo se cierra la sesión: lo demás guardado en el teléfono se queda.
+      await _prefs.remove('isLoggedIn');
+      await (_googleSignInInit ??= _initGoogleSignIn());
       await _googleSignIn.signOut();
       await _auth.signOut();
       _loggedIn = false;
@@ -70,22 +90,25 @@ class LoginState with ChangeNotifier {
 
   Future<User> _handleSignIn() async {
     try {
-      await (_googleSignInInit ??= _googleSignIn.initialize());
+      await (_googleSignInInit ??= _initGoogleSignIn());
       final GoogleSignInAccount account = await _googleSignIn.authenticate();
 
       final GoogleSignInAuthentication authentication = account.authentication;
-      final OAuthCredential credential =
-          GoogleAuthProvider.credential(idToken: authentication.idToken);
+      final OAuthCredential credential = GoogleAuthProvider.credential(
+        idToken: authentication.idToken,
+      );
 
-      final UserCredential authResult = await _auth.signInWithCredential(credential);
+      final UserCredential authResult = await _auth.signInWithCredential(
+        credential,
+      );
       final User? userpess = authResult.user;
-      if (userpess == null) throw Exception('No se pudo obtener el usuario del resultado de autenticación');
+      if (userpess == null)
+        throw Exception(
+          'No se pudo obtener el usuario del resultado de autenticación',
+        );
       return userpess;
     } on GoogleSignInException catch (e) {
       debugPrint('Error en _handleSignIn: $e');
-      if (e.code == GoogleSignInExceptionCode.canceled) {
-        throw Exception('El inicio de sesión con Google fue cancelado');
-      }
       rethrow;
     } catch (e) {
       debugPrint('Error en _handleSignIn: $e');
