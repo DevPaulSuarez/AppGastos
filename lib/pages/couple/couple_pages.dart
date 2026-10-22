@@ -662,7 +662,9 @@ class _LeaveCouplePageState extends State<LeaveCouplePage> {
           ),
           const SizedBox(height: 24),
           FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: context.money.expense),
+            style: FilledButton.styleFrom(
+              backgroundColor: context.money.expense,
+            ),
             onPressed: _leaving ? null : () => _leave(couple),
             child: const Text('Salir de la pareja'),
           ),
@@ -925,6 +927,114 @@ class _CoupleNoticesState extends State<CoupleNotices> {
         ),
       );
     }
+    final couple = space.activeCouple;
+    if (couple != null) {
+      return _CategoryRequestNotice(
+        me: couple.members.indexOf(space.uid!).clamp(0, 1),
+        partner: couple.partnerName(space.uid!),
+        card: card,
+      );
+    }
     return const SizedBox.shrink();
+  }
+}
+
+/// En Inicio: la categoría que propuso la pareja (para aceptar o rechazar)
+/// o el aviso de que no aceptó la mía.
+class _CategoryRequestNotice extends StatelessWidget {
+  final int me;
+  final String partner;
+  final Widget Function(Widget child) card;
+
+  const _CategoryRequestNotice({
+    required this.me,
+    required this.partner,
+    required this.card,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final finance = Provider.of<FinanceRepository>(context);
+    return StreamBuilder<List<CategoryRequest>>(
+      stream: finance.watchCategoryRequests(),
+      builder: (context, snapshot) {
+        final requests = snapshot.data ?? const <CategoryRequest>[];
+        final toAnswer = requests
+            .where((r) => r.pending && r.by != me)
+            .firstOrNull;
+        final rejected = requests
+            .where((r) => !r.pending && r.by == me)
+            .firstOrNull;
+        final r = toAnswer ?? rejected;
+        if (r == null) return const SizedBox.shrink();
+        final avatar = CircleAvatar(
+          radius: 18,
+          backgroundColor: r.category.color.withValues(alpha: 0.18),
+          foregroundColor: r.category.color,
+          child: Icon(r.category.iconData, size: 20),
+        );
+        if (r == toAnswer) {
+          return card(
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: [
+                    avatar,
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        '$partner quiere crear la categoría '
+                        '"${r.category.name}"',
+                        style: const TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () =>
+                            finance.answerCategoryRequest(r, false),
+                        child: const Text('Rechazar'),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: FilledButton(
+                        style: FilledButton.styleFrom(
+                          minimumSize: const Size(0, 48),
+                        ),
+                        onPressed: () => finance.answerCategoryRequest(r, true),
+                        child: const Text('Aceptar'),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          );
+        }
+        return card(
+          Row(
+            children: [
+              avatar,
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  '$partner no aceptó la categoría "${r.category.name}".',
+                ),
+              ),
+              TextButton(
+                onPressed: () => finance.deleteCategoryRequest(r.id),
+                child: const Text('Entendido'),
+              ),
+            ],
+          ),
+        );
+      },
+    );
   }
 }

@@ -170,6 +170,32 @@ class CustomCategory {
       categoryIconChoices[icon] ?? _oldIconChoices[icon] ?? Icons.sell;
 }
 
+/// En pareja, una categoría nueva la tiene que aceptar la otra persona.
+/// [by] es quién la propuso (0 o 1); [status]: pending, rejected.
+class CategoryRequest {
+  final String id;
+  final CustomCategory category;
+  final int by;
+  final String status;
+
+  const CategoryRequest({
+    required this.id,
+    required this.category,
+    required this.by,
+    required this.status,
+  });
+
+  factory CategoryRequest.fromMap(String id, Map<String, dynamic> map) =>
+      CategoryRequest(
+        id: id,
+        category: CustomCategory.fromMap(map),
+        by: (map['by'] as num?)?.toInt() ?? 0,
+        status: (map['status'] as String?) ?? 'pending',
+      );
+
+  bool get pending => status == 'pending';
+}
+
 /// Ajustes de categorías: las creadas por el usuario y las ocultas.
 class CategorySettings {
   final List<CustomCategory> custom;

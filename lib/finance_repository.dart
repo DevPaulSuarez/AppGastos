@@ -303,6 +303,52 @@ class FinanceRepository {
 
   // Categorías
 
+  static const _categoryRequests = 'categoryRequests';
+
+  /// Categorías que alguien de la pareja propuso y esperan respuesta (o que
+  /// la otra persona rechazó).
+  Stream<List<CategoryRequest>> watchCategoryRequests() => store
+      .watch(_categoryRequests)
+      .map(
+        (docs) => [for (final d in docs) CategoryRequest.fromMap(d.id, d.data)],
+      );
+
+  /// Propone una categoría nueva; se crea cuando la otra persona acepta.
+  Future<void> requestCategory(CustomCategory category, int by) => store.add(
+    _categoryRequests,
+    {...category.toMap(), 'by': by, 'status': 'pending'},
+  );
+
+  /// Acepta (la crea para los dos) o rechaza una categoría propuesta.
+  Future<void> answerCategoryRequest(
+    CategoryRequest request,
+    bool accept,
+  ) async {
+    if (!accept) {
+      await store.set(_categoryRequests, request.id, {
+        ...request.category.toMap(),
+        'by': request.by,
+        'status': 'rejected',
+      });
+      return;
+    }
+    final settings = await watchCategorySettings().first;
+    final name = request.category.name.toLowerCase();
+    if (!settings.custom.any((c) => c.name.toLowerCase() == name)) {
+      await saveCategorySettings(
+        CategorySettings(
+          custom: [...settings.custom, request.category],
+          hidden: settings.hidden,
+        ),
+      );
+    }
+    await store.delete(_categoryRequests, request.id);
+  }
+
+  /// Quita una propuesta (la cancela quien la hizo, o ya vio el rechazo).
+  Future<void> deleteCategoryRequest(String id) =>
+      store.delete(_categoryRequests, id);
+
   static const _categoriesId = 'categories';
 
   Stream<CategorySettings> watchCategorySettings() {
