@@ -38,6 +38,90 @@ class FixedPayment {
   ]..sort((a, b) => a.item.day.compareTo(b.item.day));
 }
 
+/// Aviso del teléfono para un día de pago o de cobro.
+class Reminder {
+  final int id;
+  final DateTime when;
+  final String title;
+  final String body;
+
+  const Reminder(this.id, this.when, this.title, this.body);
+
+  /// Ids que usan estos avisos (para borrarlos antes de volver a armarlos).
+  static const firstId = 100;
+  static const maxCount = 40;
+
+  /// Avisos de los próximos días, a las [hour]: cada pago fijo que todavía
+  /// no tiene "Ya pagué" y cada sueldo, el día que tocan. Un pago fijo que
+  /// ya se pasó se recuerda al día siguiente.
+  static List<Reminder> upcoming(
+    List<Recurring> items,
+    Set<String> registeredIds,
+    List<String> people,
+    DateTime now, {
+    int hour = 9,
+  }) {
+    final until = now.add(const Duration(days: 35));
+    final found = <(DateTime, String, String)>[];
+    for (final item in items) {
+      final fixedPayment = item.type == RecurringType.expense && item.confirm;
+      final salary = item.type == RecurringType.income && !item.confirm;
+      if (!fixedPayment && !salary) continue;
+      for (final month in [
+        DateTime(now.year, now.month),
+        DateTime(now.year, now.month + 1),
+      ]) {
+        if (fixedPayment &&
+            registeredIds.contains(
+              'rec_${item.id}_${month.year}-${month.month}',
+            )) {
+          continue;
+        }
+        for (final day in FinanceRepository.occurrences(
+          item,
+          month.year,
+          month.month,
+        )) {
+          final when = DateTime(day.year, day.month, day.day, hour);
+          // Ya pasó su día y sigue sin pagar: se recuerda mañana.
+          if (fixedPayment && !when.isAfter(now) && month.month == now.month) {
+            found.add((
+              DateTime(now.year, now.month, now.day + 1, hour),
+              '¿Ya pagaste ${item.description}?',
+              'Tocaba el ${day.day}: ${money(item.amount)}. Si ya lo '
+                  'pagaste, toca "Ya pagué" en la app.',
+            ));
+            continue;
+          }
+          if (!when.isAfter(now) || when.isAfter(until)) continue;
+          found.add(
+            fixedPayment
+                ? (
+                    when,
+                    'Hoy toca pagar ${item.description}',
+                    '${money(item.amount)}. Cuando lo pagues, toca '
+                        '"Ya pagué" en la app.',
+                  )
+                : (
+                    when,
+                    people.length > 1
+                        ? 'Hoy llega el sueldo de '
+                              '${personName(people, item.person)}'
+                        : 'Hoy llega tu sueldo',
+                    '${item.description}: ${money(item.amount)}',
+                  ),
+          );
+        }
+      }
+    }
+    found.sort((a, b) => a.$1.compareTo(b.$1));
+    return [
+      for (var i = 0; i < found.length && i < maxCount; i++)
+        Reminder(firstId + i, found[i].$1, found[i].$2, found[i].$3),
+    ];
+  }
+}
+
 /// Algo que todavía falta este mes: un sueldo por cobrar, un fijo o una
 /// propina por pagar, o un pago de fecha variable por confirmar.
 class Upcoming {

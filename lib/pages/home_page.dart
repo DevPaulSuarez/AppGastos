@@ -48,6 +48,14 @@ class _InicioState extends State<Inicio> {
   StreamSubscription<List<Expense>>? _expensesSub;
   StreamSubscription<List<Income>>? _incomesSub;
 
+  /// Avisos de días de pago: se arman con los fijos y lo ya pagado, y se
+  /// vuelven a programar solo si cambian.
+  StreamSubscription<List<Recurring>>? _recurringSub;
+  List<Recurring> _recurring = const [];
+  List<Expense> _allExpenses = const [];
+  String? _remindersKey;
+  final _notificationsReady = Completer<void>();
+
   /// Alerta vigente del mes en curso y si su tarjeta está a la vista. La
   /// tarjeta se muestra un rato; después queda el ícono junto al mes.
   SpendingAlert? _alert;
@@ -96,6 +104,14 @@ class _InicioState extends State<Inicio> {
               all.map((e) => DateTime(e.year, e.month)),
             ),
           );
+          _allExpenses = all;
+          _scheduleReminders();
+        });
+    _recurringSub = Provider.of<FinanceRepository>(context, listen: false)
+        .watchRecurring()
+        .listen((items) {
+          _recurring = items;
+          _scheduleReminders();
         });
     _incomesSub = Provider.of<FinanceRepository>(context, listen: false)
         .watchAllIncomes()
@@ -117,6 +133,7 @@ class _InicioState extends State<Inicio> {
     _currency?.cancel();
     _expensesSub?.cancel();
     _incomesSub?.cancel();
+    _recurringSub?.cancel();
     _alertTimer?.cancel();
     super.dispose();
   }
@@ -481,6 +498,7 @@ class _InicioState extends State<Inicio> {
               >()
               ?.requestNotificationsPermission();
           setupNotification();
+          if (!_notificationsReady.isCompleted) _notificationsReady.complete();
         });
   }
 
@@ -540,6 +558,55 @@ class _InicioState extends State<Inicio> {
     }
   }
 
+  /// Programa los avisos de "Hoy toca pagar…" y "Hoy llega el sueldo…" a
+  /// las 9 a. m. Si se marca "Ya pagué", el aviso de ese pago se quita.
+  Future<void> _scheduleReminders() async {
+    await _notificationsReady.future;
+    if (!mounted) return;
+    final people = await Provider.of<FinanceRepository>(
+      context,
+      listen: false,
+    ).watchPeople().first;
+    final reminders = Reminder.upcoming(
+      _recurring,
+      {for (final e in _allExpenses) e.id},
+      people,
+      DateTime.now(),
+    );
+    final key = [
+      for (final r in reminders) '${r.when}|${r.title}|${r.body}',
+    ].join(';');
+    if (key == _remindersKey) return;
+    _remindersKey = key;
+    try {
+      for (var i = 0; i < Reminder.maxCount; i++) {
+        await flutterLocalNotificationsPlugin.cancel(id: Reminder.firstId + i);
+      }
+      for (final r in reminders) {
+        await flutterLocalNotificationsPlugin.zonedSchedule(
+          id: r.id,
+          title: r.title,
+          body: r.body,
+          scheduledDate: TZDateTime.from(r.when, UTC),
+          notificationDetails: const NotificationDetails(
+            android: AndroidNotificationDetails(
+              'dias_de_pago',
+              'Días de pago',
+              channelDescription:
+                  'Avisos el día de un pago fijo o de un sueldo',
+              importance: Importance.high,
+              priority: Priority.high,
+            ),
+            iOS: DarwinNotificationDetails(),
+          ),
+          androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+        );
+      }
+    } catch (e) {
+      debugPrint('No se pudieron programar los avisos de pago: $e');
+    }
+  }
+
   Future<void> onSelectNotification(NotificationResponse response) async {
     final payload = response.payload;
     if (payload != null) {
@@ -548,23 +615,29 @@ class _InicioState extends State<Inicio> {
   }
 
   void setupNotification() async {
-    // recordatorio una vez al día
-    const AndroidNotificationDetails androidPlatformChannelSpecifics =
-        AndroidNotificationDetails(
+    // Cada día a las 8 p. m.: anotar lo gastado en el día. Antes repetía
+    // cada 24 horas desde que se abrió la app, a cualquier hora.
+    await flutterLocalNotificationsPlugin.cancel(id: 0);
+    final now = DateTime.now();
+    var tonight = DateTime(now.year, now.month, now.day, 20);
+    if (!tonight.isAfter(now)) {
+      tonight = DateTime(now.year, now.month, now.day + 1, 20);
+    }
+    await flutterLocalNotificationsPlugin.zonedSchedule(
+      id: 3,
+      title: '¿Gastaste algo hoy?',
+      body: 'Regístralo para llevar el control de tus gastos',
+      scheduledDate: TZDateTime.from(tonight, UTC),
+      notificationDetails: const NotificationDetails(
+        android: AndroidNotificationDetails(
           'recordatorio_diario',
           'Recordatorio diario',
           channelDescription: 'Recordatorio para registrar los gastos del día',
-        );
-    const NotificationDetails platformChannelSpecifics = NotificationDetails(
-      android: androidPlatformChannelSpecifics,
-    );
-    await flutterLocalNotificationsPlugin.periodicallyShow(
-      id: 0,
-      title: '¿Gastaste algo hoy?',
-      body: 'Regístralo para llevar el control de tus gastos',
-      repeatInterval: RepeatInterval.daily,
-      notificationDetails: platformChannelSpecifics,
+        ),
+        iOS: DarwinNotificationDetails(),
+      ),
       androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+      matchDateTimeComponents: DateTimeComponents.time,
     );
 
     // Cada viernes a las 7 p. m. (día de pago): comparar con el banco. Se
