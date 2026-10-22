@@ -487,6 +487,8 @@ class _SetupPageState extends State<SetupPage> {
         description: description.isEmpty ? chosenCategory : description,
         amount: amount,
         day: day,
+        // Espera el "Ya pagué", cuando lo vean en el banco.
+        confirm: true,
       ),
     );
   }
@@ -571,7 +573,11 @@ class _SetupPageState extends State<SetupPage> {
             ),
             const SizedBox(height: 8),
             row('Ingresos', money(income), color: context.money.income),
-            row('Pagos fijos', '− ${money(fixed)}', color: context.money.expense),
+            row(
+              'Pagos fijos',
+              '− ${money(fixed)}',
+              color: context.money.expense,
+            ),
             const Divider(),
             row(
               'Libre para lo demás',

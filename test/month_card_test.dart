@@ -18,6 +18,15 @@ void main() {
     addTearDown(tester.view.reset);
     final now = DateTime.now();
     final later = DateTime(now.year, now.month, now.day + 1);
+    final rent = Recurring(
+      type: RecurringType.expense,
+      person: 1,
+      category: 'Vivienda',
+      description: 'Alquiler',
+      amount: 1200,
+      day: now.day,
+      confirm: true,
+    );
 
     await tester.pumpWidget(
       Provider.value(
@@ -65,19 +74,10 @@ void main() {
                   ),
                   later,
                 ),
-                Upcoming(
-                  const Recurring(
-                    type: RecurringType.expense,
-                    person: 1,
-                    category: 'Vivienda',
-                    description: 'Alquiler',
-                    amount: 1200,
-                    day: 25,
-                    confirm: true,
-                  ),
-                  later,
-                ),
+                // Ya llegó su día: pide el "Ya pagué".
+                Upcoming(rent, DateTime(now.year, now.month, now.day)),
               ],
+              fixedPayments: [FixedPayment(rent, null)],
             ),
           ),
         ),
@@ -85,9 +85,20 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Tienen disponible'), findsOneWidget);
-    // 1000 − 200
-    expect(find.text('S/. 800.00'), findsOneWidget);
+    // Tienen 1000 − 200 = 800, pero el alquiler (1200) está separado.
+    expect(find.text('Libre para gastar'), findsOneWidget);
+    expect(find.text('−S/. 400.00'), findsOneWidget);
+    expect(
+      find.text(
+        'De S/. 800.00 que tienen, S/. 1200.00 están separados para los '
+        'pagos del mes',
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.text('Les faltan S/. 400.00 para los pagos del mes'),
+      findsOneWidget,
+    );
     // 800 + 3000 − 1200
     expect(
       find.textContaining('A fin de mes les quedará S/. 2600.00',
@@ -97,8 +108,10 @@ void main() {
     expect(find.text('Lo que falta este mes'), findsOneWidget);
     // Cerrados se ve el resumen; al tocarlos se abre el detalle.
     expect(find.text('Sueldo · Ana'), findsNothing);
-    expect(find.text('Por cobrar S/. 3000.00 · por pagar S/. 1200.00'),
-        findsOneWidget);
+    // El alquiler va en "Pagos fijos", no se repite aquí.
+    expect(find.text('Por cobrar S/. 3000.00'), findsOneWidget);
+    expect(find.text('Pagos fijos'), findsOneWidget);
+    expect(find.text('0 de 1 pagados'), findsOneWidget);
     await tester.tap(find.text('Lo que entró este mes'));
     await tester.tap(find.text('Lo que falta este mes'));
     await tester.pumpAndSettle();

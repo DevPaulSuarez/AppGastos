@@ -75,8 +75,10 @@ class _InicioState extends State<Inicio> {
           if (mounted) setState(() {});
         });
 
-    // Registra los sueldos y gastos fijos del mes si todavía no están.
-    Provider.of<FinanceRepository>(context, listen: false).applyRecurring();
+    // Registra los sueldos y gastos fijos del mes si todavía no están (antes,
+    // los pagos fijos pasan a esperar el "Ya pagué").
+    final finance = Provider.of<FinanceRepository>(context, listen: false);
+    finance.fixedPaymentsWaitForPaid().then((_) => finance.applyRecurring());
     // Gastos en categorías que la app ya no trae pasan a las nuevas.
     Provider.of<FinanceRepository>(
       context,
@@ -313,6 +315,14 @@ class _InicioState extends State<Inicio> {
                 return MonthWidget(
                   alert: _showAlert ? _alert : null,
                   upcoming: upcoming,
+                  fixedPayments: _isCurrentMonth
+                      ? FixedPayment.ofMonth(
+                          values[5] as List<Recurring>,
+                          docs,
+                          month,
+                          selectedYear,
+                        )
+                      : const [],
                   onDismissAlert: _hideAlert,
                   days: daysInMonth(month, selectedYear),
                   documents: docs,

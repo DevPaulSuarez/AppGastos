@@ -38,6 +38,7 @@ class GoalsPage extends StatelessWidget {
           finance.watchPeople(),
           finance.watchAllIncomes(),
           finance.watchCashCheck(),
+          finance.watchRecurring(),
         ],
         builder: (context, values) {
           final goals = values[0] as List<Goal>;
@@ -46,16 +47,23 @@ class GoalsPage extends StatelessWidget {
           final savings = all
               .where((e) => e.category == ahorroCategory)
               .toList();
-          // Se puede apartar lo mismo que dice "Tienes disponible" en
-          // Inicio (incluye lo que traían de meses anteriores).
+          // Se puede apartar lo que dice "Tienes disponible" en Inicio,
+          // menos lo que todavía falta pagar este mes (ej. el alquiler).
           final now = DateTime.now();
-          final available = cashSummaryUntil(
-            values[3] as List<Income>,
-            all,
-            values[4] as CashCheck?,
-            people.length,
-            DateTime(now.year, now.month, now.day),
-          ).free;
+          final toPay = FinanceRepository.toPayThisMonth(
+            values[5] as List<Recurring>,
+            {for (final e in all) e.id},
+            now,
+          );
+          final available =
+              cashSummaryUntil(
+                values[3] as List<Income>,
+                all,
+                values[4] as CashCheck?,
+                people.length,
+                DateTime(now.year, now.month, now.day),
+              ).free -
+              toPay;
           final goalIds = goals.map((g) => g.id).toSet();
           // Aportes de metas que se eliminaron sin decidir qué hacer con ellos.
           final orphans = savings
@@ -79,7 +87,7 @@ class GoalsPage extends StatelessWidget {
           return ListView(
             padding: const EdgeInsets.fromLTRB(16.0, 16.0, 16.0, 96.0),
             children: [
-              _availableCard(context, available),
+              _availableCard(context, available, toPay),
               const SizedBox(height: 12),
               if (orphans.isNotEmpty) ...[
                 _orphansCard(context, db, orphans),
@@ -102,7 +110,7 @@ class GoalsPage extends StatelessWidget {
     );
   }
 
-  Widget _availableCard(BuildContext context, double available) {
+  Widget _availableCard(BuildContext context, double available, double toPay) {
     final ok = available > 0;
     return Card(
       child: ListTile(
@@ -111,7 +119,12 @@ class GoalsPage extends StatelessWidget {
           color: ok ? context.money.income : context.money.expense,
         ),
         title: const Text('Disponible para aportar'),
-        subtitle: const Text('Lo mismo que "Tienes disponible" en Inicio'),
+        subtitle: Text(
+          toPay > 0
+              ? 'Lo mismo que "Libre para gastar" en Inicio: ya se '
+                    'separaron ${money(toPay)} para los pagos del mes'
+              : 'Lo mismo que "Tienes disponible" en Inicio',
+        ),
         trailing: Text(
           money(ok ? available : 0),
           style: TextStyle(

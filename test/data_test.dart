@@ -803,6 +803,87 @@ void main() {
     expect(pending, isEmpty);
   });
 
+  test('alquiler que pasa a fecha variable: vuelve a quedar sin pagar',
+      () async {
+    final today = DateTime(2026, 10, 21);
+    await finance.saveRecurring(
+        const Recurring(type: RecurringType.expense, person: 0,
+            category: 'Vivienda', description: 'Alquiler', amount: 800,
+            day: 1),
+        today: DateTime(2026, 10, 1));
+    expect((await expenses.queryAll().first).single.value, 800);
+    // Dijo tener 2000 cuando la app ya daba el alquiler por pagado.
+    await finance.setStartingMoney([2000], today: today);
+
+    final rent = (await finance.watchRecurring().first).single;
+    await finance.updateRecurring(
+        rent,
+        const Recurring(type: RecurringType.expense, person: 0,
+            category: 'Vivienda', description: 'Alquiler', amount: 800,
+            day: 1, confirm: true),
+        today: today);
+    expect(await expenses.queryAll().first, isEmpty);
+    final items = await finance.watchRecurring().first;
+    final pending = FinanceRepository.pendingConfirmations(items, {}, 10, 2026);
+    expect(pending.single.description, 'Alquiler');
+    // Todavía lo tiene: no cuenta como gastado.
+    expect(await finance.freeMoneyToday(today: today), 2800);
+
+    // Ya pagué: ahora sí se descuenta.
+    await finance.confirmRecurring(pending.single, 800, today, 10, 2026);
+    expect(await finance.freeMoneyToday(today: today), 2000);
+    // Deshacer lo deja como estaba, por más veces que se haga.
+    for (var i = 0; i < 3; i++) {
+      await finance.unconfirmRecurring(pending.single, today: today);
+      expect(await finance.freeMoneyToday(today: today), 2800);
+      await finance.confirmRecurring(pending.single, 800, today, 10, 2026);
+      expect(await finance.freeMoneyToday(today: today), 2000);
+    }
+  });
+
+  test('pagos fijos: esperan el "Ya pagué" y se pueden desmarcar', () async {
+    await finance.saveRecurring(
+        Recurring(type: RecurringType.expense, person: 0,
+            category: 'Vivienda', description: 'Alquiler', amount: 800,
+            day: 1),
+        today: DateTime(now.year, now.month, 1));
+    expect((await expenses.queryAll().first).single.value, 800);
+
+    // Lo que se anotó solo este mes vuelve a quedar sin pagar.
+    await finance.fixedPaymentsWaitForPaid();
+    final rent = (await finance.watchRecurring().first).single;
+    expect(rent.confirm, isTrue);
+    expect(await expenses.queryAll().first, isEmpty);
+
+    // "Ya pagué" con la fecha de hoy; "No lo pagué" lo vuelve a quitar.
+    await finance.confirmRecurring(rent, 800, now, now.month, now.year);
+    final expense = (await expenses.queryAll().first).single;
+    expect(expense.day, now.day);
+    await finance.unconfirmRecurring(rent);
+    expect(await expenses.queryAll().first, isEmpty);
+    // Una sola vez: no vuelve a quitar lo que ya marcaron.
+    await finance.confirmRecurring(rent, 800, now, now.month, now.year);
+    await finance.fixedPaymentsWaitForPaid();
+    expect(await expenses.queryAll().first, hasLength(1));
+  });
+
+  test('ahorro: no se puede apartar la plata del alquiler sin pagar', () async {
+    final today = DateTime(now.year, now.month, now.day);
+    await finance.saveRecurring(
+        Recurring(type: RecurringType.expense, person: 0,
+            category: 'Vivienda', description: 'Alquiler', amount: 800,
+            day: 1, confirm: true),
+        today: today);
+    await finance.setStartingMoney([1500], today: today);
+    expect(await finance.freeMoneyToday(today: today), 1500);
+    // De 1500, 800 son del alquiler: solo 700 se pueden ahorrar.
+    expect(await finance.freeForSavings(today: today), 700);
+
+    final rent = (await finance.watchRecurring().first).single;
+    await finance.confirmRecurring(rent, 800, today, now.month, now.year);
+    expect(await finance.freeForSavings(today: today), 700);
+  });
+
   test('los fijos se ponen al día si no se abrió la app varios meses', () async {
     await store.add(
         'recurring',

@@ -2,6 +2,7 @@ import 'dart:math';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:primera_app_curso/data/store.dart';
+import 'package:primera_app_curso/finance_repository.dart';
 
 /// Invitación para formar pareja: el código que una persona comparte y la
 /// solicitud de quien lo escribe. Se guarda en invitations/{código}.
@@ -127,12 +128,10 @@ String normalizeInvitationCode(String text) {
 
 /// Copia a la cuenta de pareja los sueldos, pagos fijos y propinas de una
 /// cuenta personal, a nombre de [person] (0 o 1), y suma sus categorías
-/// propias y ocultas. Lo ya cobrado o pagado este mes no se vuelve a anotar:
-/// ese dinero ya está en lo que cada uno dijo que traía.
+/// propias y ocultas. Lo ya cobrado o pagado este mes también se trae para
+/// verlo, sin contarlo dos veces (ver [FinanceRepository.copyRecurringFrom]).
 Future<void> copyPersonalSetup(Store personal, Store couple, int person) async {
-  for (final doc in await personal.watch('recurring').first) {
-    await couple.add('recurring', {...doc.data, 'person': person});
-  }
+  await FinanceRepository(couple).copyRecurringFrom(personal, person);
   final mine = await personal.get('settings', 'categories');
   if (mine == null) return;
   final ours = await couple.get('settings', 'categories');
@@ -287,8 +286,10 @@ class CoupleRepository {
       'setupPending': false,
     });
     if (currency != null) await couple.set('settings', 'currency', currency);
-    await setStartingMoney(couple, [inviterMoney, inv.joinerMoney]);
+    // Primero lo copiado, así el punto de partida ya cuenta lo que se cobró
+    // este mes.
     if (copyMine) await copyPersonalSetup(personal, couple, 0);
+    await setStartingMoney(couple, [inviterMoney, inv.joinerMoney]);
     await _invitations.doc(inv.code).update({
       'status': 'accepted',
       'coupleId': ref.id,

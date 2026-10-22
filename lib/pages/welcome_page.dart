@@ -81,9 +81,24 @@ class _WelcomePageState extends State<WelcomePage> {
                       _Option(
                         icon: Icons.people_outline,
                         title: 'En pareja',
-                        subtitle: 'Registran juntos y ven quién pagó qué',
+                        subtitle: modoPruebas
+                            ? 'Registran juntos y ven quién pagó qué'
+                            : 'Tú empiezas y luego invitas a tu pareja',
                         onTap: _saving ? null : () => _choose(false),
                       ),
+                      // Con la nube, quien recibió el código se une directo,
+                      // sin elegir antes.
+                      if (!modoPruebas) ...[
+                        const SizedBox(height: 16),
+                        _Option(
+                          icon: Icons.vpn_key_outlined,
+                          title: 'Mi pareja me invitó',
+                          subtitle: 'Tengo un código para unirme',
+                          onTap: _saving
+                              ? null
+                              : () => Navigator.of(context).pushNamed('/join'),
+                        ),
+                      ],
                       const SizedBox(height: 24),
                       Text(
                         'Puedes cambiarlo después en Ajustes.',
@@ -92,18 +107,6 @@ class _WelcomePageState extends State<WelcomePage> {
                           color: scheme.onSurfaceVariant,
                         ),
                       ),
-                      // Con la nube, la pareja puede unirse con el código
-                      // que le enviaron.
-                      if (!modoPruebas) ...[
-                        const SizedBox(height: 12),
-                        TextButton.icon(
-                          icon: const Icon(Icons.vpn_key_outlined),
-                          label: const Text('Tengo un código de invitación'),
-                          onPressed: _saving
-                              ? null
-                              : () => Navigator.of(context).pushNamed('/join'),
-                        ),
-                      ],
                       const Spacer(),
                     ],
                   ),

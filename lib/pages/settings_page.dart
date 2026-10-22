@@ -94,6 +94,18 @@ class _SettingsPageState extends State<SettingsPage> {
                   RecurringType.income,
                 ),
               ),
+              if (Provider.of<SpaceState>(context).activeCouple != null)
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: TextButton.icon(
+                      icon: const Icon(Icons.download_outlined),
+                      label: const Text('Traer mis sueldos y pagos fijos'),
+                      onPressed: () => _bringMine(context, finance),
+                    ),
+                  ),
+                ),
               _Section(
                 solo ? 'Mis pagos fijos' : 'Pagos fijos',
                 hint: 'Se pagan una vez al mes y se anotan solos ese día.',
@@ -142,29 +154,44 @@ class _SettingsPageState extends State<SettingsPage> {
                 trailing: const Icon(Icons.chevron_right),
                 onTap: () => Navigator.of(context).pushNamed('/categories'),
               ),
-              const _Section(
-                'Presupuesto mensual por categoría',
-                hint: 'Toca una categoría para ponerle un límite.',
-              ),
-              for (final category in expenseCategories)
-                ListTile(
-                  leading: Icon(categoryIcon(category)),
-                  title: Text(category),
-                  trailing: Text(
-                    budgets[category] == null
-                        ? 'Sin límite'
-                        : money(budgets[category]!),
-                    style: TextStyle(
-                      color: budgets[category] == null ? Colors.grey : null,
-                    ),
-                  ),
-                  onTap: () => _editBudget(
-                    context,
-                    finance,
-                    category,
-                    budgets[category],
-                  ),
+              // Acordeón: la lista de categorías es larga y casi no se usa.
+              Theme(
+                data: Theme.of(
+                  context,
+                ).copyWith(dividerColor: Colors.transparent),
+                child: ExpansionTile(
+                  leading: const Icon(Icons.account_balance_wallet_outlined),
+                  title: const Text('Límite de gasto por mes'),
+                  subtitle: Text(_budgetSummary(budgets)),
+                  children: [
+                    for (final category in expenseCategories)
+                      ListTile(
+                        contentPadding: const EdgeInsets.only(
+                          left: 32,
+                          right: 16,
+                        ),
+                        leading: Icon(categoryIcon(category)),
+                        title: Text(category),
+                        trailing: Text(
+                          budgets[category] == null
+                              ? 'Sin límite'
+                              : money(budgets[category]!),
+                          style: TextStyle(
+                            color: budgets[category] == null
+                                ? Colors.grey
+                                : null,
+                          ),
+                        ),
+                        onTap: () => _editBudget(
+                          context,
+                          finance,
+                          category,
+                          budgets[category],
+                        ),
+                      ),
+                  ],
                 ),
+              ),
               const _Section('Informes'),
               ListTile(
                 leading: const Icon(Icons.picture_as_pdf_outlined),
@@ -525,7 +552,10 @@ class _SettingsPageState extends State<SettingsPage> {
           ? _addAllowance(context, finance, people, existing: item)
           : _editRecurring(context, finance, people, item.type, existing: item),
       leading: switch (item.type) {
-        RecurringType.income => Icon(Icons.payments, color: context.money.income),
+        RecurringType.income => Icon(
+          Icons.payments,
+          color: context.money.income,
+        ),
         RecurringType.expense => Icon(
           Icons.event_repeat,
           color: context.money.expense,
@@ -557,6 +587,55 @@ class _SettingsPageState extends State<SettingsPage> {
         ],
       ),
     );
+  }
+
+  /// Lo que dice el acordeón cerrado de los límites por categoría.
+  String _budgetSummary(Map<String, double> budgets) {
+    final count = expenseCategories.where(budgets.containsKey).length;
+    return switch (count) {
+      0 => 'Ninguna tiene límite. Toca para ponerle uno.',
+      1 => '1 categoría con límite',
+      _ => '$count categorías con límite',
+    };
+  }
+
+  /// En pareja: trae los sueldos y pagos fijos de la cuenta personal de quien
+  /// usa el teléfono (los que ya están no se repiten).
+  Future<void> _bringMine(
+    BuildContext context,
+    FinanceRepository finance,
+  ) async {
+    final space = Provider.of<SpaceState>(context, listen: false);
+    final couple = space.activeCouple;
+    if (couple == null) return;
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final personal = FirestoreStore(space.uid!);
+      final mine = await FinanceRepository(personal).watchRecurring().first;
+      final result = await finance.copyRecurringFrom(
+        personal,
+        couple.members.indexOf(space.uid!).clamp(0, 1),
+        skipExisting: true,
+      );
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            mine.isEmpty
+                ? 'Tu cuenta personal no tiene sueldos ni pagos fijos '
+                      'guardados. Agrégalos aquí con "Agregar sueldo".'
+                : result.items == 0 && result.payments == 0
+                ? 'Ya estaba todo'
+                : 'Listo: ya se ve lo que cobraste y pagaste este mes',
+          ),
+        ),
+      );
+    } catch (e) {
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text('No se pudo traer. Revisa tu conexión a internet.'),
+        ),
+      );
+    }
   }
 
   Widget _addButton(String label, VoidCallback onPressed) {
@@ -713,13 +792,6 @@ class _SettingsPageState extends State<SettingsPage> {
             'Día de pago',
             initial: '${sameFrequency ? existing!.day : 1}',
           ),
-          // Solo los que ya eran de fecha variable siguen con esta opción.
-          if (existing?.confirm == true)
-            const DialogField(
-              '¿Es siempre el mismo día?',
-              initial: _whenConfirm,
-              options: [_whenAuto, _whenConfirm],
-            ),
         ],
         if (frequency == Frequency.biweekly) ...[
           DialogField.day(
@@ -771,9 +843,8 @@ class _SettingsPageState extends State<SettingsPage> {
         ? (parseAmount(values[i++])?.round() ?? 30).clamp(1, 31)
         : 30;
     final confirm =
-        frequency == Frequency.monthly &&
-        existing?.confirm == true &&
-        values[i++] == _whenConfirm;
+        // Un pago fijo mensual espera el "Ya pagué" (se revisa en el banco).
+        frequency == Frequency.monthly;
     final shift = askShift
         ? weekendShiftLabels.entries
               .firstWhere((e) => e.value == values[i++])
@@ -821,9 +892,6 @@ class _SettingsPageState extends State<SettingsPage> {
     await finance.setBudget(category, parseAmount(values[0])!);
   }
 }
-
-const _whenAuto = 'Sí (se registra solo)';
-const _whenConfirm = 'No, cambia cada mes (te pregunto)';
 
 class _Section extends StatelessWidget {
   final String title;
