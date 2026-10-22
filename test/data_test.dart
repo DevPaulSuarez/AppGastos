@@ -884,6 +884,39 @@ void main() {
     expect(await finance.freeForSavings(today: today), 700);
   });
 
+  test('avisos: día de pago fijo sin pagar y día de sueldo', () {
+    // Miércoles 21 de octubre, 10 a. m.
+    final now = DateTime(2026, 10, 21, 10);
+    const rent = Recurring(id: 'r', type: RecurringType.expense, person: 0,
+        category: 'Vivienda', description: 'Alquiler', amount: 800,
+        day: 1, confirm: true);
+    const phone = Recurring(id: 'c', type: RecurringType.expense, person: 0,
+        category: 'Servicios', description: 'Celular', amount: 100,
+        day: 25, confirm: true);
+    const salary = Recurring(id: 's', type: RecurringType.income, person: 1,
+        description: 'Sueldo', amount: 500, day: 5,
+        frequency: Frequency.weekly);
+    final reminders = Reminder.upcoming(
+      [rent, phone, salary],
+      {'rec_c_2026-10'}, // el celular de octubre ya se pagó
+      ['Paul', 'Marisol'],
+      now,
+    );
+    String show(Reminder r) => '${r.when.day}/${r.when.month} ${r.title}';
+    expect(reminders.take(5).map(show), [
+      // El alquiler del 1 sigue sin pagar: se recuerda mañana.
+      '22/10 ¿Ya pagaste Alquiler?',
+      '23/10 Hoy llega el sueldo de Marisol',
+      '30/10 Hoy llega el sueldo de Marisol',
+      '1/11 Hoy toca pagar Alquiler',
+      '6/11 Hoy llega el sueldo de Marisol',
+    ]);
+    // El celular de octubre ya está pagado: solo avisa el de noviembre.
+    expect(reminders.where((r) => r.title.contains('Celular')).map(show),
+        ['25/11 Hoy toca pagar Celular']);
+    expect(reminders.every((r) => r.when.hour == 9), isTrue);
+  });
+
   test('los fijos se ponen al día si no se abrió la app varios meses', () async {
     await store.add(
         'recurring',
