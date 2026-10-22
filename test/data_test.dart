@@ -917,6 +917,36 @@ void main() {
     expect(reminders.every((r) => r.when.hour == 9), isTrue);
   });
 
+  test('pareja: una categoría nueva se crea cuando la otra persona acepta',
+      () async {
+    const gym = CustomCategory(
+        name: 'Gimnasio', icon: 'otros', color: Color(0xFF22C55E));
+    const pets = CustomCategory(
+        name: 'Mascota', icon: 'otros', color: Color(0xFFF59E0B));
+    // Paul (0) propone; todavía no existe.
+    await finance.requestCategory(gym, 0);
+    expect((await finance.watchCategorySettings().first).custom, isEmpty);
+    var requests = await finance.watchCategoryRequests().first;
+    expect(requests.single.pending, isTrue);
+    expect(requests.single.by, 0);
+
+    // Marisol acepta: se crea para los dos y la propuesta desaparece.
+    await finance.answerCategoryRequest(requests.single, true);
+    expect((await finance.watchCategorySettings().first).custom.single.name,
+        'Gimnasio');
+    expect(await finance.watchCategoryRequests().first, isEmpty);
+
+    // Otra que Marisol rechaza: no se crea y Paul ve el rechazo.
+    await finance.requestCategory(pets, 0);
+    requests = await finance.watchCategoryRequests().first;
+    await finance.answerCategoryRequest(requests.single, false);
+    expect((await finance.watchCategorySettings().first).custom, hasLength(1));
+    requests = await finance.watchCategoryRequests().first;
+    expect(requests.single.status, 'rejected');
+    await finance.deleteCategoryRequest(requests.single.id);
+    expect(await finance.watchCategoryRequests().first, isEmpty);
+  });
+
   test('los fijos se ponen al día si no se abrió la app varios meses', () async {
     await store.add(
         'recurring',

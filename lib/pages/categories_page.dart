@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:primera_app_curso/categories.dart';
+import 'package:primera_app_curso/couple/space_state.dart';
 import 'package:primera_app_curso/finance_repository.dart';
 import 'package:primera_app_curso/pages/ui/dialogs.dart';
 import 'package:primera_app_curso/pages/ui/multi_stream_builder.dart';
@@ -13,19 +14,45 @@ class CategoriesPage extends StatelessWidget {
   Widget build(BuildContext context) {
     final finance = Provider.of<FinanceRepository>(context);
     final scheme = Theme.of(context).colorScheme;
+    // En pareja, una categoría nueva la acepta la otra persona.
+    final space = Provider.of<SpaceState>(context);
+    final couple = space.activeCouple;
+    final me = couple == null
+        ? 0
+        : couple.members.indexOf(space.uid!).clamp(0, 1);
+    final partner = couple?.partnerName(space.uid!) ?? '';
 
     return Scaffold(
       appBar: AppBar(title: const Text('Categorías')),
       body: MultiStreamBuilder(
-        streams: [finance.watchCategorySettings()],
+        streams: [
+          finance.watchCategorySettings(),
+          if (couple != null) finance.watchCategoryRequests(),
+        ],
         builder: (context, values) {
           final settings = values[0] as CategorySettings;
+          final requests = couple == null
+              ? const <CategoryRequest>[]
+              : [
+                  for (final r in values[1] as List<CategoryRequest>)
+                    // Un rechazo solo lo ve quien la propuso.
+                    if (r.pending || r.by == me) r,
+                ];
           // Se aplican aquí también para que los avatares se vean al momento.
           categorySettings = settings;
 
           return ListView(
             padding: const EdgeInsets.only(bottom: 96),
             children: [
+              if (requests.isNotEmpty) ...[
+                _header(
+                  context,
+                  'Esperando respuesta',
+                  'Una categoría nueva se crea cuando los dos están de acuerdo.',
+                ),
+                for (final r in requests)
+                  _requestTile(context, finance, r, me, partner),
+              ],
               _header(context, 'Creadas por ustedes',
                   'Toca una para cambiar su nombre, ícono o color.'),
               if (settings.custom.isEmpty)
@@ -81,7 +108,13 @@ class CategoriesPage extends StatelessWidget {
         onPressed: () async {
           final settings = await finance.watchCategorySettings().first;
           if (!context.mounted) return;
-          await _edit(context, finance, settings, null);
+          await _edit(
+            context,
+            finance,
+            settings,
+            null,
+            couple: couple == null ? null : (me, partner),
+          );
         },
       ),
     );
@@ -104,11 +137,59 @@ class CategoriesPage extends StatelessWidget {
     );
   }
 
+  /// Una propuesta de categoría: la mía (esperando o rechazada) o la de mi
+  /// pareja (para aceptar o rechazar).
+  Widget _requestTile(BuildContext context, FinanceRepository finance,
+      CategoryRequest r, int me, String partner) {
+    final mine = r.by == me;
+    return ListTile(
+      leading: CircleAvatar(
+        radius: 20,
+        backgroundColor: r.category.color.withValues(alpha: 0.18),
+        foregroundColor: r.category.color,
+        child: Icon(r.category.iconData, size: 22),
+      ),
+      title: Text(r.category.name),
+      subtitle: Text(!mine
+          ? '$partner quiere crearla'
+          : r.pending
+              ? 'Esperando que $partner acepte'
+              : '$partner no la aceptó'),
+      trailing: !mine
+          ? Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextButton(
+                  onPressed: () => finance.answerCategoryRequest(r, false),
+                  child: const Text('Rechazar'),
+                ),
+                TextButton(
+                  onPressed: () => finance.answerCategoryRequest(r, true),
+                  child: const Text('Aceptar'),
+                ),
+              ],
+            )
+          : TextButton(
+              onPressed: () => finance.deleteCategoryRequest(r.id),
+              child: Text(r.pending ? 'Cancelar' : 'Entendido'),
+            ),
+    );
+  }
+
+  /// [couple]: en pareja, (quién soy, nombre de mi pareja). Ahí una
+  /// categoría nueva se propone y la crea la otra persona al aceptar.
   Future<void> _edit(BuildContext context, FinanceRepository finance,
-      CategorySettings settings, CustomCategory? existing) async {
+      CategorySettings settings, CustomCategory? existing,
+      {(int, String)? couple}) async {
+    final pending = couple == null
+        ? const <CategoryRequest>[]
+        : await finance.watchCategoryRequests().first;
+    if (!context.mounted) return;
     final taken = {
       ...builtInCategories,
       ...settings.custom.map((c) => c.name),
+      for (final r in pending)
+        if (r.pending) r.category.name,
     }.map((n) => n.toLowerCase()).toSet()
       ..remove(existing?.name.toLowerCase());
 
@@ -117,6 +198,16 @@ class CategoriesPage extends StatelessWidget {
       builder: (_) => _CategoryDialog(existing: existing, taken: taken),
     );
     if (result == null) return;
+
+    if (existing == null && couple != null) {
+      final messenger = ScaffoldMessenger.of(context);
+      await finance.requestCategory(result, couple.$1);
+      messenger.showSnackBar(SnackBar(
+        content: Text('Le preguntamos a ${couple.$2}. Cuando acepte, '
+            '"${result.name}" aparece para los dos.'),
+      ));
+      return;
+    }
 
     final custom = [
       for (final c in settings.custom)
