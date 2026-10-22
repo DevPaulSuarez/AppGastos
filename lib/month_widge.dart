@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:flutter/material.dart';
 import 'package:primera_app_curso/currency.dart';
 import 'package:primera_app_curso/alerts.dart';
@@ -49,6 +51,9 @@ class MonthWidget extends StatefulWidget {
   /// Lo que todavía falta este mes (solo en el mes en curso).
   final List<Upcoming> upcoming;
 
+  /// Pagos fijos del mes en curso, con su "Ya pagué".
+  final List<FixedPayment> fixedPayments;
+
   /// Dinero libre que traían al empezar el mes (de meses anteriores o del
   /// punto de partida), sin contar lo apartado como ahorro.
   final double carriedOver;
@@ -71,6 +76,7 @@ class MonthWidget extends StatefulWidget {
     this.alert,
     this.onDismissAlert,
     this.upcoming = const [],
+    this.fixedPayments = const [],
     this.carriedOver = 0,
     required List<Expense> documents,
     required int days,
@@ -141,6 +147,10 @@ class MonthWidget extends StatefulWidget {
   double get toPay =>
       upcoming.where((u) => !u.isIncome).fold(0.0, (a, u) => a + u.amount);
 
+  /// Lo que se puede gastar sin tocar la plata separada para lo que falta
+  /// pagar este mes (ej. el alquiler).
+  double get freeToSpend => available - toPay;
+
   /// Con cuánto libre cerrarían el mes si todo lo que falta se cobra y se
   /// paga.
   double get projected => available + toReceive - toPay;
@@ -177,13 +187,17 @@ class _MonthWidgetState extends State<MonthWidget> {
           const SizedBox(height: 12),
           _ingresos(),
         ],
-        if (widget.upcoming.isNotEmpty) ...[
+        if (widget.upcoming.any((u) => !_isFixedPayment(u))) ...[
           const SizedBox(height: 12),
           _porVenir(),
         ],
         if (widget.pendingLoans.isNotEmpty) ...[
           const SizedBox(height: 12),
           _porCobrar(),
+        ],
+        if (widget.fixedPayments.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          _pagosFijos(),
         ],
         const SizedBox(height: 16),
         if (widget.total > 0 || widget.saved > 0) ...[
@@ -388,7 +402,9 @@ class _MonthWidgetState extends State<MonthWidget> {
                     minHeight: 6,
                     color: overBudget
                         ? context.money.expense
-                        : (value > budget * 0.8 ? context.money.warning : context.money.income),
+                        : (value > budget * 0.8
+                              ? context.money.warning
+                              : context.money.income),
                     backgroundColor: scheme.surfaceContainerHighest,
                   ),
                 ),
@@ -503,10 +519,11 @@ class _MonthWidgetState extends State<MonthWidget> {
     required double amount,
     Color? dateColor,
     Widget? action,
+    VoidCallback? onTap,
   }) {
     final scheme = Theme.of(context).colorScheme;
     final color = isIncome ? context.money.income : context.money.expense;
-    return Padding(
+    final row = Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
         children: [
@@ -540,6 +557,7 @@ class _MonthWidgetState extends State<MonthWidget> {
         ],
       ),
     );
+    return onTap == null ? row : InkWell(onTap: onTap, child: row);
   }
 
   String _withPerson(String name, int person) => widget.people.length > 1
@@ -579,55 +597,242 @@ class _MonthWidgetState extends State<MonthWidget> {
     );
   }
 
-  /// Lo que todavía falta este mes, por fecha. Los fijos se registran solos
-  /// el día que tocan; los de fecha variable se confirman aquí.
+  /// Lo que todavía falta este mes, por fecha. Los sueldos se registran
+  /// solos el día que tocan; los pagos fijos, cuando llega su día, piden el
+  /// "Ya pagué" (se revisa en el banco), y los de fecha variable también.
   Widget _porVenir() {
     final today = DateTime.now().day;
+    // Sin los pagos fijos, que se ven en su tarjeta.
+    final toPay = widget.upcoming
+        .where((u) => !u.isIncome && !_isFixedPayment(u))
+        .fold(0.0, (a, u) => a + u.amount);
     final pending = [
       if (widget.toReceive > 0) 'por cobrar ${money(widget.toReceive)}',
-      if (widget.toPay > 0) 'por pagar ${money(widget.toPay)}',
+      if (toPay > 0) 'por pagar ${money(toPay)}',
     ].join(' · ');
     return _accordion(
       title: 'Lo que falta este mes',
       summary: pending[0].toUpperCase() + pending.substring(1),
       total: const SizedBox.shrink(),
       children: [
+        // Los pagos fijos tienen su propia tarjeta, encima del gráfico.
         for (final u in widget.upcoming)
-          _moveRow(
-            isIncome: u.isIncome,
-            name: _withPerson(u.item.description, u.item.person),
-            date: !u.needsConfirm
-                ? _dayLabel(u.date)
-                : u.isIncome
-                ? 'Cerca del día ${u.date.day} · ¿ya llegó?'
-                : 'Cerca del día ${u.date.day} · ¿ya se pagó?',
-            dateColor: u.needsConfirm && today > u.date.day
-                ? context.money.warning
-                : null,
-            amount: u.amount,
-            action: u.needsConfirm
-                ? Padding(
-                    padding: const EdgeInsets.only(top: 4),
-                    child: FilledButton.tonal(
-                      style: FilledButton.styleFrom(
-                        minimumSize: const Size(0, 36),
-                        visualDensity: VisualDensity.compact,
-                      ),
-                      onPressed: () => _confirmPayment(u.item),
-                      child: Text(u.isIncome ? 'Ya llegó' : 'Ya pagué'),
-                    ),
-                  )
-                : null,
-          ),
+          if (!_isFixedPayment(u)) _upcomingRow(u, today),
       ],
     );
   }
 
-  /// Registra un pago de fecha variable con el monto y el día reales.
+  bool _isFixedPayment(Upcoming u) => !u.isIncome && u.needsConfirm;
+
+  /// Los pagos fijos del mes, cada uno con su estado: pagado, "Ya pagué"
+  /// (desde su día) o la fecha en que toca.
+  Widget _pagosFijos() {
+    final scheme = Theme.of(context).colorScheme;
+    final now = DateTime.now();
+    final payments = widget.fixedPayments;
+    final paidCount = payments.where((p) => p.paid != null).length;
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                const Expanded(
+                  child: Text(
+                    'Pagos fijos',
+                    style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
+                  ),
+                ),
+                Text(
+                  '$paidCount de ${payments.length} pagados',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: scheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            for (final p in payments) _fixedPaymentRow(p, now),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Un pago fijo con el ícono de su categoría. El monto se ve al pagarlo
+  /// (antes de confirmar, y después en la fila).
+  Widget _fixedPaymentRow(FixedPayment p, DateTime now) {
+    final scheme = Theme.of(context).colorScheme;
+    final item = p.item;
+    final paid = p.paid;
+    final due = DateTime(
+      now.year,
+      now.month,
+      min(item.day, daysInMonth(now.month, now.year)),
+    );
+    final today = DateTime(now.year, now.month, now.day);
+    final askPaid = paid == null && !due.isAfter(today);
+    final status = paid != null
+        ? '✓ Pagado el ${_dayLabel(DateTime(paid.year, paid.month, paid.day))}'
+        : due == today
+        ? 'Toca hoy'
+        : due.isBefore(today)
+        ? 'Tocaba el ${_dayLabel(due)}'
+        : 'Toca el ${_dayLabel(due)}';
+    final statusColor = paid != null
+        ? context.money.income
+        : due.isBefore(today)
+        ? context.money.warning
+        : scheme.onSurfaceVariant;
+
+    return InkWell(
+      onTap: paid != null ? () => _unpay(item) : null,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 6),
+        child: Row(
+          children: [
+            CategoryAvatar(item.category, size: 40),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    _withPerson(item.description, item.person),
+                    style: const TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  Text(
+                    '${item.category} · $status',
+                    style: TextStyle(fontSize: 12, color: statusColor),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            if (paid != null)
+              Text(
+                '− ${money(paid.value)}',
+                style: TextStyle(
+                  fontWeight: FontWeight.w700,
+                  color: context.money.expense,
+                ),
+              )
+            else if (askPaid)
+              FilledButton.tonal(
+                style: FilledButton.styleFrom(
+                  minimumSize: const Size(0, 36),
+                  padding: const EdgeInsets.symmetric(horizontal: 14),
+                  textStyle: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                  ),
+                  visualDensity: VisualDensity.compact,
+                ),
+                onPressed: () => _confirmPayment(item),
+                child: const Text('Ya pagué'),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Lo marcaron como pagado por error: vuelve a quedar pendiente.
+  Future<void> _unpay(Recurring item) async {
+    final finance = Provider.of<FinanceRepository>(context, listen: false);
+    if (await confirmDialog(
+      context,
+      '¿Todavía no pagaste "${item.description}" este mes?',
+      confirm: 'No lo pagué',
+    )) {
+      await finance.unconfirmRecurring(item);
+    }
+  }
+
+  Widget _upcomingRow(Upcoming u, int today) {
+    // Un pago fijo pide el botón recién desde su día; antes solo se ve la
+    // fecha, como un gasto que viene.
+    final askPaid = u.needsConfirm && (u.isIncome || today >= u.date.day);
+    return _moveRow(
+      isIncome: u.isIncome,
+      name: _withPerson(u.item.description, u.item.person),
+      date: !askPaid
+          ? _dayLabel(u.date)
+          : u.isIncome
+          ? 'Cerca del día ${u.date.day} · ¿ya llegó?'
+          : today == u.date.day
+          ? 'Toca hoy · ¿ya se pagó?'
+          : 'Tocaba el ${_dayLabel(u.date)} · ¿ya se pagó?',
+      dateColor: askPaid && today > u.date.day ? context.money.warning : null,
+      amount: u.amount,
+      action: askPaid
+          ? Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: FilledButton.tonal(
+                style: FilledButton.styleFrom(
+                  minimumSize: const Size(0, 36),
+                  visualDensity: VisualDensity.compact,
+                ),
+                onPressed: () => _confirmPayment(u.item),
+                child: Text(u.isIncome ? 'Ya llegó' : 'Ya pagué'),
+              ),
+            )
+          : null,
+    );
+  }
+
+  /// Registra un pago de fecha variable con el monto y el día reales. Un
+  /// pago fijo se anota de un toque, con la fecha de hoy.
   Future<void> _confirmPayment(Recurring item) async {
     final finance = Provider.of<FinanceRepository>(context, listen: false);
     final now = DateTime.now();
     final isIncome = item.type == RecurringType.income;
+    if (!isIncome) {
+      final messenger = ScaffoldMessenger.of(context);
+      final ok = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          icon: CategoryAvatar(item.category),
+          title: Text('¿Ya pagaste ${item.description}?'),
+          content: Text(
+            'Se restarán ${money(item.amount)} de lo que tienen disponible.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Todavía no'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Sí, ya pagué'),
+            ),
+          ],
+        ),
+      );
+      if (ok != true) return;
+      await finance.confirmRecurring(
+        item,
+        item.amount,
+        now,
+        now.month,
+        now.year,
+      );
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            '${item.description}: pagado hoy, ${money(item.amount)}',
+          ),
+          action: SnackBarAction(
+            label: 'Deshacer',
+            onPressed: () => finance.unconfirmRecurring(item),
+          ),
+        ),
+      );
+      return;
+    }
     final values = await showFieldsDialog(
       context,
       title: isIncome ? '¿Cuánto recibieron?' : '¿Cuánto pagaron?',
@@ -700,14 +905,25 @@ class _MonthWidgetState extends State<MonthWidget> {
   /// quedar?"; el detalle del mes va abajo, en chico.
   Widget _resumen() {
     final scheme = Theme.of(context).colorScheme;
-    final white = scheme.onPrimary;
+    // En el tema oscuro, la tarjeta lleva su propio verde (más vivo que el
+    // del tema) con letras blancas.
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    final white = dark ? _darkCardText : scheme.onPrimary;
     final soft = white.withValues(alpha: 0.85);
     final current = _isCurrentMonth;
-    final main = current ? widget.available : widget.leftover;
+    // En el mes en curso, lo libre: lo que tienen sin lo separado para
+    // los pagos que faltan.
+    final reserved = current ? widget.toPay : 0.0;
+    final main = current ? widget.freeToSpend : widget.leftover;
+    // En números rojos, el número y el aviso van en rojo (en el tema
+    // oscuro, el mismo rojo de los gastos).
+    final red = dark ? context.money.expense : const Color(0xFFFCA5A5);
     final monthName = monthNames[widget.month].toLowerCase();
 
     final String title;
-    if (current) {
+    if (current && reserved > 0) {
+      title = 'Libre para gastar';
+    } else if (current) {
       title = _solo ? 'Tienes disponible' : 'Tienen disponible';
     } else if (widget.leftover >= 0) {
       title = _solo ? 'En $monthName te sobró' : 'En $monthName les sobró';
@@ -741,10 +957,12 @@ class _MonthWidgetState extends State<MonthWidget> {
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(24),
           gradient: LinearGradient(
-            colors: [
-              scheme.primary,
-              Color.lerp(scheme.primary, Colors.black, 0.25)!,
-            ],
+            colors: dark
+                ? const [Color(0xFF2F6B44), Color(0xFF1F3725)]
+                : [
+                    scheme.primary,
+                    Color.lerp(scheme.primary, Colors.black, 0.25)!,
+                  ],
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
           ),
@@ -757,24 +975,37 @@ class _MonthWidgetState extends State<MonthWidget> {
             FittedBox(
               fit: BoxFit.scaleDown,
               child: Text(
-                money(main.abs()),
+                // Con el signo: "−S/. 349" es que falta, no que queda.
+                main < 0 ? '−${money(-main)}' : money(main),
                 style: TextStyle(
-                  color: main < 0 ? const Color(0xFFFCA5A5) : white,
+                  color: main < 0 ? red : white,
                   fontSize: 40,
                   fontWeight: FontWeight.w800,
                 ),
               ),
             ),
+            if (current && reserved > 0)
+              Text(
+                'De ${money(widget.available)} que ${_solo ? 'tienes' : 'tienen'}, '
+                '${money(reserved)} están separados '
+                'para los pagos del mes',
+                style: TextStyle(color: soft, fontSize: 13),
+              ),
             if (current && main < 0)
               Text(
-                _solo
+                widget.available >= 0
+                    ? '${_solo ? 'Te' : 'Les'} faltan ${money(-main)} para '
+                          'los pagos del mes'
+                    : _solo
                     ? 'Gastaste más de lo que tenías'
                     : 'Gastaron más de lo que tenían',
-                style: const TextStyle(color: Color(0xFFFCA5A5)),
+                style: TextStyle(color: red, fontWeight: FontWeight.w600),
               ),
-            if (current && widget.upcoming.isNotEmpty) ...[
+            // Sin sueldos por cobrar, a fin de mes queda lo mismo que lo
+            // libre: no se repite el número.
+            if (current && widget.toReceive > 0) ...[
               const SizedBox(height: 4),
-              _cierre(scheme),
+              _cierre(scheme, red),
             ],
             const SizedBox(height: 14),
             Wrap(
@@ -815,8 +1046,10 @@ class _MonthWidgetState extends State<MonthWidget> {
 
   /// Dentro de la tarjeta verde, en una línea: con cuánto cerrarían el mes
   /// si se cobra y se paga todo lo que falta.
-  Widget _cierre(ColorScheme scheme) {
-    final white = scheme.onPrimary;
+  Widget _cierre(ColorScheme scheme, Color red) {
+    final white = Theme.of(context).brightness == Brightness.dark
+        ? _darkCardText
+        : scheme.onPrimary;
     final projected = widget.projected;
     return Text.rich(
       TextSpan(
@@ -831,7 +1064,7 @@ class _MonthWidgetState extends State<MonthWidget> {
             text: money(projected),
             style: TextStyle(
               fontWeight: FontWeight.w800,
-              color: projected < 0 ? const Color(0xFFFCA5A5) : white,
+              color: projected < 0 ? red : white,
             ),
           ),
         ],
@@ -839,6 +1072,9 @@ class _MonthWidgetState extends State<MonthWidget> {
     );
   }
 }
+
+/// Letras de la tarjeta verde en el tema oscuro.
+const _darkCardText = Colors.white;
 
 class _Legend extends StatelessWidget {
   final Color color;

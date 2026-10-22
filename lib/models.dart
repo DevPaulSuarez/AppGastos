@@ -152,6 +152,7 @@ class Recurring {
   String get schedule => switch (type) {
         RecurringType.allowance =>
           biweekly ? 'cada quincena (15 y 30)' : 'a fin de mes (30)',
+        _ when confirm && type == RecurringType.expense => 'cada mes, día $day',
         _ when confirm => 'una vez al mes, fecha variable (~día $day)',
         _ => switch (frequency) {
             Frequency.monthly => 'cada mes, día $day',

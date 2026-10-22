@@ -12,6 +12,32 @@ import 'package:primera_app_curso/utils.dart';
 /// pareja, luego cargar sueldos y gastos fijos, y después ya se usa normal.
 enum AccountStep { choose, setup, ready }
 
+/// Un pago fijo del mes en curso: lo que hay que pagar y, si ya se marcó
+/// "Ya pagué", el gasto anotado.
+class FixedPayment {
+  final Recurring item;
+  final Expense? paid;
+
+  const FixedPayment(this.item, this.paid);
+
+  /// Los pagos fijos del mes (los que esperan el "Ya pagué"), por día.
+  static List<FixedPayment> ofMonth(
+    List<Recurring> items,
+    List<Expense> expenses,
+    int month,
+    int year,
+  ) => [
+    for (final item in items)
+      if (item.type == RecurringType.expense && item.confirm)
+        FixedPayment(
+          item,
+          expenses
+              .where((e) => e.id == 'rec_${item.id}_$year-$month')
+              .firstOrNull,
+        ),
+  ]..sort((a, b) => a.item.day.compareTo(b.item.day));
+}
+
 /// Algo que todavía falta este mes: un sueldo por cobrar, un fijo o una
 /// propina por pagar, o un pago de fecha variable por confirmar.
 class Upcoming {
@@ -244,6 +270,29 @@ class FinanceRepository {
     await store.set(_settings, id, {...?done?.data, 'categories': 2});
   }
 
+  /// Los pagos fijos mensuales ya no se dan por pagados solos: esperan a que
+  /// la persona revise su banco y toque "Ya pagué". Lo que la app anotó
+  /// sola este mes se quita (ej. el alquiler del 1 que aún no pagan) y vuelve
+  /// a quedar con el botón. Una sola vez por cuenta.
+  Future<void> fixedPaymentsWaitForPaid({DateTime? today}) async {
+    const id = 'migrations';
+    final done = await store.get(_settings, id);
+    if (done?.data['fixedPaid'] == true) return;
+    for (final item in await watchRecurring().first) {
+      if (item.type == RecurringType.expense &&
+          item.frequency == Frequency.monthly &&
+          !item.confirm) {
+        await store.set(_recurring, item.id, {
+          ...item.toMap(),
+          'confirm': true,
+          'weekendShift': WeekendShift.none.name,
+        });
+        await unconfirmRecurring(item, today: today);
+      }
+    }
+    await store.set(_settings, id, {...?done?.data, 'fixedPaid': true});
+  }
+
   // Ingresos
 
   Stream<List<Income>> _incomesWhere(Map<String, Object?> where) {
@@ -373,11 +422,17 @@ class FinanceRepository {
         }
       }
     }
-    if (amount == 0) return;
+    await _shiftStartingMoney(item.person, isIncome ? -amount : amount);
+  }
+
+  /// Corrige el punto de partida de [person] en [delta].
+  Future<void> _shiftStartingMoney(int person, double delta) async {
+    final check = await watchCashCheck().first;
+    if (check == null || check.offsets.isEmpty || delta == 0) return;
     // Todo el dinero va junto en la primera persona (ver setStartingMoney).
     final offsets = [...check.offsets];
-    final who = item.person < offsets.length ? item.person : 0;
-    offsets[who] += isIncome ? -amount : amount;
+    final who = person < offsets.length ? person : 0;
+    offsets[who] += delta;
     await saveCashCheck(
       CashCheck(
         offsets: offsets,
@@ -385,6 +440,89 @@ class FinanceRepository {
         date: check.date,
       ),
     );
+  }
+
+  /// Trae a esta cuenta (la de pareja) los sueldos, pagos fijos y propinas
+  /// de la cuenta [personal], a nombre de [person], junto con lo que ya se
+  /// cobró o pagó de ellos este mes (para que se vea en "Lo que entró este
+  /// mes"). Ese dinero ya está en lo que cada uno dijo que traía, así que no
+  /// se cuenta dos veces. Con [skipExisting] no repite los que ya están
+  /// (mismo nombre, monto y persona), pero sí trae sus pagos de este mes que
+  /// falten. Devuelve cuántos fijos y cuántos pagos trajo.
+  Future<({int items, int payments})> copyRecurringFrom(
+    Store personal,
+    int person, {
+    bool skipExisting = false,
+    DateTime? today,
+  }) async {
+    final now = today ?? DateTime.now();
+    final until = DateTime(now.year, now.month, now.day);
+    final existing = skipExisting ? await watchRecurring().first : const [];
+    final personalIncomes = await personal.watch(_incomes).first;
+    final personalExpenses = await personal.watch('expenses').first;
+    final ours = {
+      for (final c in [_incomes, 'expenses'])
+        for (final d in await store.watch(c).first) d.id,
+    };
+    final check = await watchCashCheck().first;
+    bool beforeCheck(DateTime d) =>
+        check != null &&
+        !d.isAfter(DateTime(check.date.year, check.date.month, check.date.day));
+
+    var items = 0;
+    var payments = 0;
+    var delta = 0.0;
+    for (final doc in await personal.watch(_recurring).first) {
+      final item = Recurring.fromMap(doc.id, doc.data);
+      final same = existing.where(
+        (r) =>
+            r.type == item.type &&
+            r.person == person &&
+            r.description == item.description &&
+            r.amount == item.amount,
+      );
+      final String id;
+      if (same.isNotEmpty) {
+        id = same.first.id;
+      } else {
+        id = await store.add(_recurring, {...doc.data, 'person': person});
+        items++;
+      }
+      if (item.type == RecurringType.allowance) continue;
+
+      final prefix = 'rec_${doc.id}_';
+      String? target(Doc record, int year, int month, DateTime date) {
+        if (!record.id.startsWith(prefix) ||
+            year != now.year ||
+            month != now.month ||
+            date.isAfter(until)) {
+          return null;
+        }
+        final newId = 'rec_${id}_${record.id.substring(prefix.length)}';
+        return ours.contains(newId) ? null : newId;
+      }
+
+      for (final record in personalIncomes) {
+        final income = Income.fromMap(record.id, record.data);
+        final date = DateTime(income.year, income.month, income.day);
+        final newId = target(record, income.year, income.month, date);
+        if (newId == null) continue;
+        await store.set(_incomes, newId, {...record.data, 'person': person});
+        payments++;
+        if (beforeCheck(date)) delta -= income.amount;
+      }
+      for (final record in personalExpenses) {
+        final expense = Expense.fromMap(record.id, record.data);
+        final date = DateTime(expense.year, expense.month, expense.day);
+        final newId = target(record, expense.year, expense.month, date);
+        if (newId == null) continue;
+        await store.set('expenses', newId, {...record.data, 'paidBy': person});
+        payments++;
+        if (beforeCheck(date)) delta += expense.value;
+      }
+    }
+    await _shiftStartingMoney(person, delta);
+    return (items: items, payments: payments);
   }
 
   Future<void> deleteRecurring(String id) => store.delete(_recurring, id);
@@ -437,6 +575,22 @@ class FinanceRepository {
 
     if (previous.lastApplied == null) return;
     final recordId = 'rec_${item.id}_${previous.lastApplied}';
+
+    // Pasa a fecha variable: lo que se anotó solo este mes se quita y queda
+    // esperando el "Ya pagué".
+    if (item.type != RecurringType.allowance &&
+        !previous.confirm &&
+        item.confirm &&
+        previous.lastApplied == '${now.year}-${now.month}') {
+      await _removeRecord(item, recordId);
+      final prev = DateTime(now.year, now.month - 1);
+      await store.set(
+        _recurring,
+        item.id,
+        item.copyWith(lastApplied: '${prev.year}-${prev.month}').toMap(),
+      );
+      return;
+    }
 
     // Fijo mensual que pasa a un día que todavía no llegó: lo de este mes se
     // quita y vuelve a quedar "por venir" hasta ese día.
@@ -654,6 +808,28 @@ class FinanceRepository {
     return result..sort((a, b) => a.date.compareTo(b.date));
   }
 
+  /// Lo que todavía falta pagar este mes (pagos fijos sin "Ya pagué",
+  /// propinas por dar...). [registeredIds]: ids de los gastos ya anotados.
+  static double toPayThisMonth(
+    List<Recurring> items,
+    Set<String> registeredIds,
+    DateTime today,
+  ) => upcoming(
+    items,
+    registeredIds,
+    today,
+  ).where((u) => !u.isIncome).fold(0.0, (a, u) => a + u.amount);
+
+  /// Lo que se puede apartar para ahorro o metas: lo disponible hoy sin lo
+  /// que falta pagar este mes (ej. el alquiler), para no ahorrar la plata
+  /// del alquiler.
+  Future<double> freeForSavings({DateTime? today}) async {
+    final now = today ?? DateTime.now();
+    final ids = {for (final d in await store.watch('expenses').first) d.id};
+    return await freeMoneyToday(today: now) -
+        toPayThisMonth(await watchRecurring().first, ids, now);
+  }
+
   /// Pagos de fecha variable (sueldos o gastos) que todavía no confirmaron
   /// en el mes indicado.
   static List<Recurring> pendingConfirmations(
@@ -671,6 +847,20 @@ class FinanceRepository {
           )
           .toList()
         ..sort((a, b) => a.day.compareTo(b.day));
+
+  /// "Todavía no lo pagué": quita el pago de este mes de un fijo que se
+  /// confirma a mano, y vuelve a quedar en "Lo que falta este mes".
+  Future<void> unconfirmRecurring(Recurring item, {DateTime? today}) {
+    final now = today ?? DateTime.now();
+    return _removeRecord(item, 'rec_${item.id}_${now.year}-${now.month}');
+  }
+
+  /// Borra un pago anotado de un fijo: el dinero vuelve a contar como que
+  /// todavía lo tienen (no se pagó).
+  Future<void> _removeRecord(Recurring item, String recordId) => store.delete(
+    item.type == RecurringType.income ? _incomes : 'expenses',
+    recordId,
+  );
 
   /// Registra un pago de fecha variable del mes [month]/[year], con el monto
   /// y el día en que realmente se pagó o cobró.

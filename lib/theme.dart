@@ -25,8 +25,8 @@ class MoneyColors extends ThemeExtension<MoneyColors> {
   );
 
   static const dark = MoneyColors(
-    income: Color(0xFF8FD3A8),
-    expense: Color(0xFFF0A29B),
+    income: Color(0xFF43A866),
+    expense: Color(0xFFEF4444),
     savings: Color(0xFFA3C0F5),
     warning: Color(0xFFF2BB80),
   );
@@ -65,7 +65,17 @@ extension MoneyColorsOf on BuildContext {
 const _seed = Color(0xFF059669);
 
 ThemeData buildTheme(Brightness brightness) {
-  final scheme = ColorScheme.fromSeed(seedColor: _seed, brightness: brightness);
+  final base = ColorScheme.fromSeed(seedColor: _seed, brightness: brightness);
+  // En el tema oscuro, el verde del tema es el mismo de los ingresos (el
+  // pastel de fábrica se ve apagado).
+  final scheme = brightness == Brightness.dark
+      ? base.copyWith(
+          primary: MoneyColors.dark.income,
+          onPrimary: const Color(0xFF060B07),
+          secondaryContainer: const Color(0xFF1F3725),
+          onSecondaryContainer: const Color(0xFFD6F2DC),
+        )
+      : base;
 
   return ThemeData(
     useMaterial3: true,

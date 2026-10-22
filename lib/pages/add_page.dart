@@ -477,10 +477,10 @@ class _AddPageState extends State<AddPage> with SingleTickerProviderStateMixin {
       return;
     }
     if (category == ahorroCategory) {
-      // No se puede apartar más de lo que tienen disponible (lo mismo que
-      // "Tienes disponible" en Inicio).
+      // No se puede apartar más de lo que tienen disponible, sin lo que
+      // falta pagar este mes.
       final finance = Provider.of<FinanceRepository>(context, listen: false);
-      final available = await finance.freeMoneyToday();
+      final available = await finance.freeForSavings();
       if (!mounted) return;
       if (value > available + 0.001) {
         ScaffoldMessenger.of(context).showSnackBar(
