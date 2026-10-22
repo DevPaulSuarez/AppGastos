@@ -36,6 +36,10 @@ Future<String> _myName(BuildContext context) async {
 
 double? _amount(TextEditingController c) => parseAmount(c.text);
 
+const _moneyMissing =
+    'Escribe con cuánto dinero entras (banco + efectivo). Si no tienes '
+    'nada, pon 0.';
+
 /// Campo de dinero con el símbolo de la moneda.
 Widget _moneyField(TextEditingController controller, String label) => TextField(
   controller: controller,
@@ -250,6 +254,7 @@ Future<void> acceptPartner(BuildContext context, Invitation inv) async {
   );
   final hasSetup = (await personal.watchRecurring().first).isNotEmpty;
   var copy = hasSetup;
+  String? moneyError;
   if (!context.mounted) return;
 
   final ok = await showDialog<bool>(
@@ -270,6 +275,17 @@ Future<void> acceptPartner(BuildContext context, Invitation inv) async {
               ),
               const SizedBox(height: 16),
               _moneyField(myMoney, '¿Con cuánto dinero entras tú?'),
+              if (moneyError != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Text(
+                    moneyError!,
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.error,
+                      fontSize: 13,
+                    ),
+                  ),
+                ),
               const SizedBox(height: 4),
               _note(
                 context,
@@ -291,7 +307,13 @@ Future<void> acceptPartner(BuildContext context, Invitation inv) async {
             child: const Text('Cancelar'),
           ),
           TextButton(
-            onPressed: () => Navigator.of(context).pop(true),
+            onPressed: () {
+              if (_amount(myMoney) == null) {
+                setState(() => moneyError = _moneyMissing);
+                return;
+              }
+              Navigator.of(context).pop(true);
+            },
             child: const Text('Unirnos'),
           ),
         ],
@@ -375,6 +397,22 @@ class _JoinPageState extends State<JoinPage> {
       setState(() => _error = 'Escribe el código que te enviaron');
       return;
     }
+    // Obligatorio: si queda vacío la app cuenta 0 y no cuadra con el banco.
+    final money = _amount(_money);
+    if (money == null) {
+      setState(() => _error = _moneyMissing);
+      return;
+    }
+    if (money == 0 &&
+        !await confirmDialog(
+          context,
+          '¿Seguro que entras con S/. 0? Escribe lo que tienes hoy en el banco '
+          'y en efectivo.',
+          confirm: 'Sí, entro con 0',
+        )) {
+      return;
+    }
+    if (!mounted) return;
     setState(() {
       _sending = true;
       _error = null;
@@ -387,7 +425,7 @@ class _JoinPageState extends State<JoinPage> {
             joinerName: _name.text.trim().isEmpty
                 ? 'Pareja'
                 : _name.text.trim(),
-            money: _amount(_money) ?? 0,
+            money: money,
             copySetup: _copy,
           );
     } catch (e) {
