@@ -36,6 +36,11 @@ android {
             // TODO: Add your own signing config for the release build.
             // Signing with the debug keys for now, so `flutter run --release` works.
             signingConfig = signingConfigs.getByName("debug")
+            // Sin achicar el código: shared_preferences busca piezas de Kotlin
+            // por nombre y el achicador las quita o renombra (la app no
+            // podía leer si había iniciado sesión).
+            isMinifyEnabled = false
+            isShrinkResources = false
         }
     }
 }
