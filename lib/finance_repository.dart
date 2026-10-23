@@ -1058,6 +1058,12 @@ class FinanceRepository {
           paidBy: item.person,
         ).toMap(),
       );
+      // Un pago que cambia cada mes (ej. el alquiler): lo pagado queda como
+      // el monto aproximado del mes que viene.
+      if (amount != item.amount) {
+        final updated = item.copyWith(amount: amount);
+        await store.set(_recurring, item.id, updated.toMap());
+      }
     }
   }
 

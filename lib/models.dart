@@ -231,14 +231,14 @@ class Recurring {
     if (lastApplied != null) "lastApplied": lastApplied,
   };
 
-  Recurring copyWith({String? id, String? lastApplied}) {
+  Recurring copyWith({String? id, String? lastApplied, double? amount}) {
     return Recurring(
       id: id ?? this.id,
       type: type,
       person: person,
       category: category,
       description: description,
-      amount: amount,
+      amount: amount ?? this.amount,
       day: day,
       frequency: frequency,
       secondDay: secondDay,
