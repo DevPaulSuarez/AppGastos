@@ -590,12 +590,60 @@ class _MonthWidgetState extends State<MonthWidget> {
           _moveRow(
             isIncome: true,
             name: _withPerson(income.description, income.person),
-            date: _dayLabel(DateTime(income.year, income.month, income.day)),
+            date: [
+              _dayLabel(DateTime(income.year, income.month, income.day)),
+              if (income.expected != null)
+                'llegó incompleto (era ${money(income.expected!)})',
+            ].join(' · '),
+            dateColor: income.expected == null ? null : context.money.warning,
             amount: income.amount,
+            onTap: income.isSalary ? () => _editSalary(income) : null,
+          ),
+        if (items.any((i) => i.isSalary))
+          Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: Text(
+              '¿Un sueldo llegó menos? Tócalo para cambiar el monto.',
+              style: TextStyle(
+                fontSize: 12,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            ),
           ),
       ],
     );
   }
+
+  /// Un sueldo no siempre llega completo (ej. faltó un día): se anota lo que
+  /// llegó de verdad.
+  Future<void> _editSalary(Income income) async {
+    final finance = Provider.of<FinanceRepository>(context, listen: false);
+    final full = income.expected ?? income.amount;
+    final date = _dayLabel(DateTime(income.year, income.month, income.day));
+    final values = await showFieldsDialog(
+      context,
+      title: '${income.description} del $date',
+      hint:
+          'Completo es ${money(full)}. Si faltó algún día y llegó menos, '
+          'escribe lo que llegó de verdad.',
+      fields: [
+        DialogField(
+          '¿Cuánto llegó?',
+          initial: _plain(income.amount),
+          number: true,
+        ),
+      ],
+      validate: (v) =>
+          (parseAmount(v[0]) ?? 0) <= 0 ? 'Escribe un monto mayor que 0' : null,
+    );
+    if (values == null) return;
+    await finance.setIncomeAmount(income, parseAmount(values[0])!);
+  }
+
+  /// Monto para un campo de texto: sin ".0" si es entero.
+  String _plain(double amount) => amount == amount.roundToDouble()
+      ? amount.toStringAsFixed(0)
+      : amount.toStringAsFixed(2);
 
   /// Lo que todavía falta este mes, por fecha. Los sueldos se registran
   /// solos el día que tocan; los pagos fijos, cuando llega su día, piden el
