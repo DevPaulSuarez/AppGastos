@@ -203,7 +203,11 @@ class BalancePage extends StatelessWidget {
               ),
             ),
             if (saved != 0)
-              _row('Separado para ahorro', -saved, color: context.money.savings),
+              _row(
+                'Separado para ahorro',
+                -saved,
+                color: context.money.savings,
+              ),
             if (lent != 0)
               _row(
                 lent > 0 ? 'Prestado (por cobrar)' : 'Te devolvieron préstamos',
@@ -214,7 +218,9 @@ class BalancePage extends StatelessWidget {
               'Sobrante del mes',
               leftover,
               bold: true,
-              color: leftover < 0 ? context.money.expense : context.money.income,
+              color: leftover < 0
+                  ? context.money.expense
+                  : context.money.income,
             ),
             if (leftover < 0)
               Padding(
@@ -576,9 +582,12 @@ class BalancePage extends StatelessWidget {
               style: const TextStyle(fontWeight: FontWeight.w600),
             ),
             subtitle: Text(
-              people.length > 1
-                  ? '${_date(income.day)} · ${personName(people, income.person)}'
-                  : _date(income.day),
+              [
+                _date(income.day),
+                if (people.length > 1) personName(people, income.person),
+                if (income.expected != null)
+                  'incompleto (era ${money(income.expected!)})',
+              ].join(' · '),
             ),
             trailing: Text(
               '+ ${money(income.amount)}',

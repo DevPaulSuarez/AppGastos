@@ -466,6 +466,27 @@ class FinanceRepository {
 
   Future<void> deleteIncome(String id) => store.delete(_incomes, id);
 
+  /// Cambia lo que llegó de un sueldo (ej. faltó un día y llegó menos). Se
+  /// guarda lo que debía llegar para mostrar que vino incompleto; si se pone
+  /// de nuevo el monto completo, vuelve a quedar como completo.
+  Future<void> setIncomeAmount(Income income, double amount) {
+    final full = income.expected ?? income.amount;
+    return store.set(
+      _incomes,
+      income.id,
+      Income(
+        id: income.id,
+        person: income.person,
+        description: income.description,
+        amount: amount,
+        day: income.day,
+        month: income.month,
+        year: income.year,
+        expected: amount == full ? null : full,
+      ).toMap(),
+    );
+  }
+
   // Ingresos y gastos fijos
 
   Stream<List<Recurring>> watchRecurring() {
@@ -761,12 +782,18 @@ class FinanceRepository {
           id: recordId,
           person: item.person,
           description: item.description,
-          amount: item.amount,
+          // Si ese sueldo llegó incompleto, se mantiene lo que llegó.
+          amount: income.expected == null || income.amount >= item.amount
+              ? item.amount
+              : income.amount,
           day: item.isDated
               ? income.day
               : min(item.day, daysInMonth(income.month, income.year)),
           month: income.month,
           year: income.year,
+          expected: income.expected == null || income.amount >= item.amount
+              ? null
+              : item.amount,
         ).toMap(),
       );
     } else {

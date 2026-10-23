@@ -13,6 +13,10 @@ class Income {
   final int month;
   final int year;
 
+  /// Sueldo que llegó incompleto (ej. faltó algún día): lo que debía llegar.
+  /// Null si llegó completo.
+  final double? expected;
+
   const Income({
     required this.id,
     required this.person,
@@ -21,7 +25,11 @@ class Income {
     this.day = 1,
     required this.month,
     required this.year,
+    this.expected,
   });
+
+  /// Sueldo registrado solo (no anotado a mano).
+  bool get isSalary => id.startsWith('rec_');
 
   factory Income.fromMap(String id, Map<String, dynamic> map) {
     return Income(
@@ -29,22 +37,31 @@ class Income {
       person: (map['person'] as num).toInt(),
       description: (map['description'] as String?) ?? '',
       amount: currencySettings.convert(
-          (map['amount'] as num).toDouble(), map['currency'] as String?),
+        (map['amount'] as num).toDouble(),
+        map['currency'] as String?,
+      ),
       day: (map['day'] as num?)?.toInt() ?? 1,
       month: (map['month'] as num).toInt(),
       year: (map['year'] as num).toInt(),
+      expected: map['expected'] == null
+          ? null
+          : currencySettings.convert(
+              (map['expected'] as num).toDouble(),
+              map['currency'] as String?,
+            ),
     );
   }
 
   Map<String, dynamic> toMap() => {
-        "person": person,
-        "description": description,
-        "amount": amount,
-        "currency": currencySettings.code,
-        "day": day,
-        "month": month,
-        "year": year,
-      };
+    "person": person,
+    "description": description,
+    "amount": amount,
+    "currency": currencySettings.code,
+    "day": day,
+    "month": month,
+    "year": year,
+    if (expected != null) "expected": expected,
+  };
 }
 
 enum RecurringType { income, expense, allowance }
@@ -142,19 +159,20 @@ class Recurring {
 
   /// Cuánto es al mes, aproximado (una semana = 52/12 por mes).
   double get monthlyAmount => switch (frequency) {
-        _ when confirm || type == RecurringType.allowance => amount,
-        Frequency.monthly => amount,
-        Frequency.biweekly => amount * 2,
-        Frequency.weekly => amount * 52 / 12,
-      };
+    _ when confirm || type == RecurringType.allowance => amount,
+    Frequency.monthly => amount,
+    Frequency.biweekly => amount * 2,
+    Frequency.weekly => amount * 52 / 12,
+  };
 
   /// Texto corto con cuándo se paga, por ejemplo "cada semana (viernes)".
   String get schedule => switch (type) {
-        RecurringType.allowance =>
-          biweekly ? 'cada quincena (15 y 30)' : 'a fin de mes (30)',
-        _ when confirm && type == RecurringType.expense => 'cada mes, día $day',
-        _ when confirm => 'una vez al mes, fecha variable (~día $day)',
-        _ => switch (frequency) {
+    RecurringType.allowance =>
+      biweekly ? 'cada quincena (15 y 30)' : 'a fin de mes (30)',
+    _ when confirm && type == RecurringType.expense => 'cada mes, día $day',
+    _ when confirm => 'una vez al mes, fecha variable (~día $day)',
+    _ =>
+      switch (frequency) {
             Frequency.monthly => 'cada mes, día $day',
             Frequency.biweekly => 'dos veces al mes (días $day y $secondDay)',
             Frequency.weekly =>
@@ -165,47 +183,53 @@ class Recurring {
             WeekendShift.next => ', fin de semana → lunes',
             WeekendShift.previous => ', fin de semana → viernes',
           },
-      };
+  };
 
   factory Recurring.fromMap(String id, Map<String, dynamic> map) {
     return Recurring(
       id: id,
-      type: RecurringType.values.firstWhere((t) => t.name == map['type'],
-          orElse: () => RecurringType.expense),
+      type: RecurringType.values.firstWhere(
+        (t) => t.name == map['type'],
+        orElse: () => RecurringType.expense,
+      ),
       person: (map['person'] as num).toInt(),
       category: (map['category'] as String?) ?? '',
       description: (map['description'] as String?) ?? '',
       amount: currencySettings.convert(
-          (map['amount'] as num).toDouble(), map['currency'] as String?),
+        (map['amount'] as num).toDouble(),
+        map['currency'] as String?,
+      ),
       day: (map['day'] as num).toInt(),
       frequency: Frequency.values.firstWhere(
-          (f) => f.name == map['frequency'],
-          orElse: () => Frequency.monthly),
+        (f) => f.name == map['frequency'],
+        orElse: () => Frequency.monthly,
+      ),
       secondDay: (map['secondDay'] as num?)?.toInt() ?? 30,
       confirm: (map['confirm'] as bool?) ?? false,
       weekendShift: WeekendShift.values.firstWhere(
-          (w) => w.name == map['weekendShift'],
-          orElse: () => WeekendShift.none),
+        (w) => w.name == map['weekendShift'],
+        orElse: () => WeekendShift.none,
+      ),
       biweekly: (map['biweekly'] as bool?) ?? false,
       lastApplied: map['lastApplied'] as String?,
     );
   }
 
   Map<String, dynamic> toMap() => {
-        "type": type.name,
-        "person": person,
-        "category": category,
-        "description": description,
-        "amount": amount,
-        "currency": currencySettings.code,
-        "day": day,
-        "frequency": frequency.name,
-        "secondDay": secondDay,
-        "confirm": confirm,
-        "weekendShift": weekendShift.name,
-        "biweekly": biweekly,
-        if (lastApplied != null) "lastApplied": lastApplied,
-      };
+    "type": type.name,
+    "person": person,
+    "category": category,
+    "description": description,
+    "amount": amount,
+    "currency": currencySettings.code,
+    "day": day,
+    "frequency": frequency.name,
+    "secondDay": secondDay,
+    "confirm": confirm,
+    "weekendShift": weekendShift.name,
+    "biweekly": biweekly,
+    if (lastApplied != null) "lastApplied": lastApplied,
+  };
 
   Recurring copyWith({String? id, String? lastApplied}) {
     return Recurring(
@@ -240,10 +264,15 @@ class Goal {
       id: id,
       name: map['name'] as String,
       target: currencySettings.convert(
-          (map['target'] as num).toDouble(), map['currency'] as String?),
+        (map['target'] as num).toDouble(),
+        map['currency'] as String?,
+      ),
     );
   }
 
-  Map<String, dynamic> toMap() =>
-      {"name": name, "target": target, "currency": currencySettings.code};
+  Map<String, dynamic> toMap() => {
+    "name": name,
+    "target": target,
+    "currency": currencySettings.code,
+  };
 }

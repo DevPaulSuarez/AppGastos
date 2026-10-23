@@ -540,6 +540,33 @@ void main() {
     expect((await finance.watchIncomes(10, 2026).first).length, 3);
   });
 
+  test('un sueldo que llegó incompleto se puede corregir', () async {
+    final today = DateTime(2026, 10, 20);
+    const salary = Recurring(type: RecurringType.income, person: 0,
+        frequency: Frequency.weekly, description: 'Sueldo', amount: 500,
+        day: DateTime.friday);
+    await finance.saveRecurring(salary,
+        today: today, firstPayment: DateTime(2026, 10, 9));
+    Future<List<Income>> october() async =>
+        (await finance.watchIncomes(10, 2026).first)
+          ..sort((a, b) => a.day.compareTo(b.day));
+
+    // El viernes 16 faltó un día: llegaron 400.
+    await finance.setIncomeAmount((await october())[1], 400);
+    var incomes = await october();
+    expect(incomes.map((i) => '${i.day} ${i.amount} ${i.expected}'),
+        ['9 500.0 null', '16 400.0 500.0']);
+
+    // Los siguientes viernes siguen llegando completos.
+    await finance.applyRecurring(today: DateTime(2026, 10, 23));
+    expect((await october()).last.amount, 500);
+
+    // Volver a poner 500 lo deja completo.
+    incomes = await october();
+    await finance.setIncomeAmount(incomes[1], 500);
+    expect((await october())[1].expected, isNull);
+  });
+
   test('agregar el sueldo después de decir cuánto tenía no lo cuenta dos '
       'veces', () async {
     // El 20 dice que tiene 1000; ese dinero ya incluye los viernes 9 y 16.
