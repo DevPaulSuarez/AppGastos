@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:primera_app_curso/firebase_options.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
@@ -73,19 +74,22 @@ class LoginState with ChangeNotifier {
   }
 
   Future<void> logout() async {
+    // Primero se quitan las pantallas con datos: si la cuenta se cerrara
+    // antes, por un momento seguirían leyendo la nube sin permiso y
+    // mostrarían un error.
+    _loggedIn = false;
+    _errorMessage = null;
+    notifyListeners();
+    await SchedulerBinding.instance.endOfFrame;
     try {
       // Solo se cierra la sesión: lo demás guardado en el teléfono se queda.
       await _prefs.remove('isLoggedIn');
       await (_googleSignInInit ??= _initGoogleSignIn());
       await _googleSignIn.signOut();
       await _auth.signOut();
-      _loggedIn = false;
-      _errorMessage = null;
     } catch (e) {
-      _errorMessage = 'Error al cerrar sesión: $e';
       debugPrint('Error en logout: $e');
     }
-    notifyListeners();
   }
 
   Future<User> _handleSignIn() async {
