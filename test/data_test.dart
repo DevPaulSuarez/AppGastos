@@ -911,6 +911,22 @@ void main() {
     expect(await finance.freeForSavings(today: today), 700);
   });
 
+  test('pago que cambia cada mes: lo pagado queda como aproximado', () async {
+    final today = DateTime(now.year, now.month, now.day);
+    await finance.saveRecurring(
+        Recurring(type: RecurringType.expense, person: 0,
+            category: 'Vivienda', description: 'Alquiler', amount: 750,
+            day: 1, confirm: true),
+        today: today);
+    final rent = (await finance.watchRecurring().first).single;
+    await finance.confirmRecurring(rent, 820.09, today, now.month, now.year);
+    expect((await expenses.queryAll().first).single.value, 820.09);
+    final updated = (await finance.watchRecurring().first).single;
+    expect(updated.amount, 820.09);
+    expect(updated.id, rent.id);
+    expect(updated.confirm, isTrue);
+  });
+
   test('avisos: día de pago fijo sin pagar y día de sueldo', () {
     // Miércoles 21 de octubre, 10 a. m.
     final now = DateTime(2026, 10, 21, 10);

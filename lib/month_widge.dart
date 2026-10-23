@@ -840,39 +840,30 @@ class _MonthWidgetState extends State<MonthWidget> {
     final isIncome = item.type == RecurringType.income;
     if (!isIncome) {
       final messenger = ScaffoldMessenger.of(context);
-      final ok = await showDialog<bool>(
-        context: context,
-        builder: (context) => AlertDialog(
-          icon: CategoryAvatar(item.category),
-          title: Text('¿Ya pagaste ${item.description}?'),
-          content: Text(
-            'Se restarán ${money(item.amount)} de lo que tienen disponible.',
+      // El monto puede cambiar cada mes (ej. el alquiler): se escribe lo que
+      // se pagó de verdad.
+      final values = await showFieldsDialog(
+        context,
+        title: '¿Ya pagaste ${item.description}?',
+        confirm: 'Sí, ya pagué',
+        hint: 'Si este mes fue otro monto, cámbialo.',
+        fields: [
+          DialogField(
+            '¿Cuánto pagaste?',
+            initial: _plain(item.amount),
+            number: true,
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(false),
-              child: const Text('Todavía no'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.of(context).pop(true),
-              child: const Text('Sí, ya pagué'),
-            ),
-          ],
-        ),
+        ],
+        validate: (v) => (parseAmount(v[0]) ?? 0) <= 0
+            ? 'Escribe un monto mayor que 0'
+            : null,
       );
-      if (ok != true) return;
-      await finance.confirmRecurring(
-        item,
-        item.amount,
-        now,
-        now.month,
-        now.year,
-      );
+      if (values == null) return;
+      final amount = parseAmount(values[0])!;
+      await finance.confirmRecurring(item, amount, now, now.month, now.year);
       messenger.showSnackBar(
         SnackBar(
-          content: Text(
-            '${item.description}: pagado hoy, ${money(item.amount)}',
-          ),
+          content: Text('${item.description}: pagado hoy, ${money(amount)}'),
           action: SnackBarAction(
             label: 'Deshacer',
             onPressed: () => finance.unconfirmRecurring(item),

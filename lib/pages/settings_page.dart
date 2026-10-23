@@ -783,7 +783,9 @@ class _SettingsPageState extends State<SettingsPage> {
           initial: existing?.description ?? '',
         ),
         DialogField(
-          'Monto',
+          // Ej. el alquiler: cada mes es distinto; al tocar "Ya pagué" se
+          // escribe lo real.
+          isIncome ? 'Monto' : 'Monto (si cambia cada mes, uno aproximado)',
           initial: existing?.amount.toStringAsFixed(2) ?? '',
           number: true,
         ),
