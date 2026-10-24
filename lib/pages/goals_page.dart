@@ -40,7 +40,7 @@ class GoalsPage extends StatelessWidget {
           finance.watchAllIncomes(),
           finance.watchCashCheck(),
           finance.watchRecurring(),
-          finance.watchTitheOn(),
+          finance.watchTithe(),
         ],
         builder: (context, values) {
           final goals = values[0] as List<Goal>;
@@ -53,22 +53,18 @@ class GoalsPage extends StatelessWidget {
           // menos lo que todavía falta pagar este mes (ej. el alquiler) y el
           // diezmo por dar.
           final now = DateTime.now();
-          final tithe = values[6] == true
-              ? Tithe.of(
-                  (values[3] as List<Income>)
-                      .where((i) => i.month == now.month && i.year == now.year)
-                      .toList(),
-                  all
-                      .where((e) => e.month == now.month && e.year == now.year)
-                      .toList(),
-                ).pending
-              : 0.0;
+          final tithe = Tithes.of(
+            values[6] as TitheSettings,
+            values[3] as List<Income>,
+            all,
+            now.month,
+            now.year,
+            count: people.length,
+          ).pending;
           final toPay =
-              FinanceRepository.toPayThisMonth(
-                values[5] as List<Recurring>,
-                {for (final e in all) e.id},
-                now,
-              ) +
+              FinanceRepository.toPayThisMonth(values[5] as List<Recurring>, {
+                for (final e in all) e.id,
+              }, now) +
               tithe;
           final available =
               cashSummaryUntil(

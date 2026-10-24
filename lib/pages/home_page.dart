@@ -279,7 +279,7 @@ class _InicioState extends State<Inicio> {
                 finance.watchAllIncomes(),
                 db.queryAll(),
                 finance.watchCashCheck(),
-                finance.watchTitheOn(),
+                finance.watchTithe(),
               ],
               builder: (BuildContext context, List<Object?> values) {
                 final docs = values[0] as List<Expense>;
@@ -306,8 +306,16 @@ class _InicioState extends State<Inicio> {
                       }, DateTime.now())
                     : <Upcoming>[];
                 // El diezmo por dar queda separado, como un pago fijo.
-                final tithe = _isCurrentMonth && values[9] == true
-                    ? Tithe.of(incomes, docs)
+                final titheSettings = values[9] as TitheSettings;
+                final tithe = _isCurrentMonth && titheSettings.on
+                    ? Tithes.of(
+                        titheSettings,
+                        incomes,
+                        docs,
+                        month,
+                        selectedYear,
+                        count: people.length,
+                      )
                     : null;
                 // Sin movimientos, pendientes ni dinero de antes no hay nada
                 // que mostrar.
@@ -348,7 +356,7 @@ class _InicioState extends State<Inicio> {
                           selectedYear,
                         )
                       : const [],
-                  tithe: tithe,
+                  tithe: tithe == null || tithe.isEmpty ? null : tithe,
                   onDismissAlert: _hideAlert,
                   days: daysInMonth(month, selectedYear),
                   documents: docs,

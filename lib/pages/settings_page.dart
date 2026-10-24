@@ -42,14 +42,14 @@ class _SettingsPageState extends State<SettingsPage> {
           finance.watchRecurring(),
           finance.watchBudgets(),
           finance.watchSolo(),
-          finance.watchTitheOn(),
+          finance.watchTithe(),
         ],
         builder: (context, values) {
           final people = values[0] as List<String>;
           final recurring = values[1] as List<Recurring>;
           final budgets = values[2] as Map<String, double>;
           final solo = values[3] as bool? ?? false;
-          final titheOn = values[4] == true;
+          final tithe = values[4] as TitheSettings;
           final incomes = recurring
               .where((r) => r.type == RecurringType.income)
               .toList();
@@ -199,22 +199,29 @@ class _SettingsPageState extends State<SettingsPage> {
               ),
               const _Section(
                 'Iglesia',
-                hint: 'En Inicio se ve como una sola categoría; aquí, el '
+                hint:
+                    'En Inicio se ve como una sola categoría; aquí, el '
                     'detalle.',
               ),
-              SwitchListTile(
-                secondary: const Icon(Icons.church_outlined),
-                title: const Text('Apartar el diezmo (10%)'),
-                subtitle: Text(
-                  titheOn
-                      ? 'El 10% del sueldo que llega queda apartado hasta '
-                            'darlo a fin de mes'
-                      : 'Apagado. Al prenderlo, el 10% del sueldo que '
-                            'llega queda apartado hasta fin de mes',
+              // Cada uno da su diezmo por separado, de su propio sueldo.
+              for (var p = 0; p < people.length; p++)
+                SwitchListTile(
+                  secondary: const Icon(Icons.church_outlined),
+                  title: Text(
+                    people.length > 1
+                        ? 'Diezmo de ${people[p]}'
+                        : 'Apartar el diezmo (10%)',
+                  ),
+                  subtitle: Text(
+                    tithe.people.contains(p)
+                        ? 'El 10% de su sueldo queda apartado hasta darlo a '
+                              'fin de mes. En Inicio puedes cambiar el monto'
+                        : 'Apagado. Al prenderlo, el 10% de su sueldo '
+                              'queda apartado hasta fin de mes',
+                  ),
+                  value: tithe.people.contains(p),
+                  onChanged: (on) => _setTithe(context, finance, p, on),
                 ),
-                value: titheOn,
-                onChanged: (on) => _setTithe(context, finance, on),
-              ),
               ListTile(
                 leading: const Icon(Icons.receipt_long_outlined),
                 title: const Text('Informe de la iglesia'),
@@ -700,20 +707,20 @@ class _SettingsPageState extends State<SettingsPage> {
     await finance.setPeople(names);
   }
 
-  /// Al apagar el diezmo se puede quitar lo anotado como diezmo este mes:
-  /// ese dinero vuelve a "Libre para gastar".
+  /// Al apagar el diezmo de una persona se puede quitar lo que anotó como
+  /// diezmo este mes: ese dinero vuelve a "Libre para gastar".
   Future<void> _setTithe(
     BuildContext context,
     FinanceRepository finance,
+    int person,
     bool on,
   ) async {
-    if (on) return finance.setTitheOn(true);
+    if (on) return finance.setTitheOn(person, true);
     final db = Provider.of<ExpensesRepository>(context, listen: false);
     final now = DateTime.now();
-    final given = (await db.queryByMonth(
-      now.month,
-      now.year,
-    ).first).where(isTithe).toList();
+    final given = (await db.queryByMonth(now.month, now.year).first)
+        .where((e) => isTithe(e) && (e.paidBy ?? 0) == person)
+        .toList();
     if (given.isNotEmpty && context.mounted) {
       final total = given.fold(0.0, (a, e) => a + e.value);
       final remove = await showDialog<bool>(
@@ -740,7 +747,7 @@ class _SettingsPageState extends State<SettingsPage> {
       if (remove == null) return;
       if (remove) await db.deleteMany(given.map((e) => e.id));
     }
-    await finance.setTitheOn(false);
+    await finance.setTitheOn(person, false);
   }
 
   Future<void> _editRecurring(
