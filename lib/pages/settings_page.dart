@@ -16,6 +16,9 @@ import 'package:primera_app_curso/pages/ui/multi_stream_builder.dart';
 import 'package:primera_app_curso/theme.dart';
 import 'package:primera_app_curso/utils.dart';
 import 'package:provider/provider.dart';
+import 'package:primera_app_curso/pages/church_page.dart';
+import 'package:primera_app_curso/expenses_repository.dart';
+import 'package:primera_app_curso/tithe.dart';
 
 class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key});
@@ -39,12 +42,14 @@ class _SettingsPageState extends State<SettingsPage> {
           finance.watchRecurring(),
           finance.watchBudgets(),
           finance.watchSolo(),
+          finance.watchTitheOn(),
         ],
         builder: (context, values) {
           final people = values[0] as List<String>;
           final recurring = values[1] as List<Recurring>;
           final budgets = values[2] as Map<String, double>;
           final solo = values[3] as bool? ?? false;
+          final titheOn = values[4] == true;
           final incomes = recurring
               .where((r) => r.type == RecurringType.income)
               .toList();
@@ -191,6 +196,33 @@ class _SettingsPageState extends State<SettingsPage> {
                       ),
                   ],
                 ),
+              ),
+              const _Section(
+                'Iglesia',
+                hint: 'En Inicio se ve como una sola categoría; aquí, el '
+                    'detalle.',
+              ),
+              SwitchListTile(
+                secondary: const Icon(Icons.church_outlined),
+                title: const Text('Apartar el diezmo (10%)'),
+                subtitle: Text(
+                  titheOn
+                      ? 'El 10% del sueldo que llega queda apartado hasta '
+                            'darlo a fin de mes'
+                      : 'Apagado. Al prenderlo, el 10% del sueldo que '
+                            'llega queda apartado hasta fin de mes',
+                ),
+                value: titheOn,
+                onChanged: (on) => _setTithe(context, finance, on),
+              ),
+              ListTile(
+                leading: const Icon(Icons.receipt_long_outlined),
+                title: const Text('Informe de la iglesia'),
+                subtitle: const Text(
+                  'Diezmo, ofrendas, ayudas y materiales, mes a mes',
+                ),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => openChurchReport(context, DateTime.now().year),
               ),
               const _Section('Informes'),
               ListTile(
@@ -666,6 +698,49 @@ class _SettingsPageState extends State<SettingsPage> {
     if (values == null || values[0].isEmpty) return;
     final names = [...people]..[index] = values[0];
     await finance.setPeople(names);
+  }
+
+  /// Al apagar el diezmo se puede quitar lo anotado como diezmo este mes:
+  /// ese dinero vuelve a "Libre para gastar".
+  Future<void> _setTithe(
+    BuildContext context,
+    FinanceRepository finance,
+    bool on,
+  ) async {
+    if (on) return finance.setTitheOn(true);
+    final db = Provider.of<ExpensesRepository>(context, listen: false);
+    final now = DateTime.now();
+    final given = (await db.queryByMonth(
+      now.month,
+      now.year,
+    ).first).where(isTithe).toList();
+    if (given.isNotEmpty && context.mounted) {
+      final total = given.fold(0.0, (a, e) => a + e.value);
+      final remove = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('¿Quitar el diezmo de este mes?'),
+          content: Text(
+            'Este mes anotaste ${money(total)} como diezmo. Si lo quitas, '
+            'ese dinero vuelve a "Libre para gastar".',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Dejarlo'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Quitarlo'),
+            ),
+          ],
+        ),
+      );
+      // Cerró el aviso sin elegir: el diezmo sigue prendido.
+      if (remove == null) return;
+      if (remove) await db.deleteMany(given.map((e) => e.id));
+    }
+    await finance.setTitheOn(false);
   }
 
   Future<void> _editRecurring(

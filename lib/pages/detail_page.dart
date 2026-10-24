@@ -3,6 +3,7 @@ import 'package:primera_app_curso/categories.dart';
 import 'package:primera_app_curso/expense.dart';
 import 'package:flutter/material.dart';
 import 'package:primera_app_curso/pages/ui/day_expense_list_tile.dart';
+import 'package:primera_app_curso/pages/church_page.dart';
 import 'package:primera_app_curso/pages/ui/dialogs.dart';
 import 'package:primera_app_curso/utils.dart';
 
@@ -43,10 +44,23 @@ class DetailsPage extends StatelessWidget {
     ));
   }
 
+  /// Total por nota (Diezmo, Ofrenda...), de mayor a menor. Solo sirve si
+  /// hay más de una nota distinta.
+  List<MapEntry<String, double>> get _byNote {
+    final totals = <String, double>{};
+    for (final e in documents) {
+      final note = e.description.trim().isEmpty ? categoryName : e.description.trim();
+      totals[note] = (totals[note] ?? 0) + e.value;
+    }
+    if (totals.length < 2) return const [];
+    return totals.entries.toList()..sort((a, b) => b.value.compareTo(a.value));
+  }
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final total = documents.fold(0.0, (a, e) => a + e.value);
+    final byNote = _byNote;
 
     return Scaffold(
         appBar: AppBar(
@@ -57,6 +71,17 @@ class DetailsPage extends StatelessWidget {
               Expanded(child: Text(categoryName)),
             ],
           ),
+          actions: [
+            if (categoryName == iglesiaCategory)
+              IconButton(
+                tooltip: 'Informe de la iglesia',
+                icon: const Icon(Icons.receipt_long_outlined),
+                onPressed: () => openChurchReport(
+                  context,
+                  documents.firstOrNull?.year ?? DateTime.now().year,
+                ),
+              ),
+          ],
         ),
         body: documents.isEmpty
             ? Center(
@@ -72,18 +97,39 @@ class DetailsPage extends StatelessWidget {
                       child: Card(
                         child: Padding(
                           padding: const EdgeInsets.all(16),
-                          child: Row(
+                          child: Column(
                             children: [
-                              Expanded(
-                                child: Text(
-                                  '${documents.length} '
-                                  '${documents.length == 1 ? 'gasto' : 'gastos'} este mes',
-                                  style: TextStyle(color: scheme.onSurfaceVariant),
-                                ),
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      '${documents.length} '
+                                      '${documents.length == 1 ? 'gasto' : 'gastos'} este mes',
+                                      style: TextStyle(color: scheme.onSurfaceVariant),
+                                    ),
+                                  ),
+                                  Text(money(total),
+                                      style: const TextStyle(
+                                          fontSize: 20, fontWeight: FontWeight.w800)),
+                                ],
                               ),
-                              Text(money(total),
-                                  style: const TextStyle(
-                                      fontSize: 20, fontWeight: FontWeight.w800)),
+                              if (byNote.isNotEmpty) const Divider(height: 24),
+                              for (final e in byNote)
+                                Padding(
+                                  padding: const EdgeInsets.symmetric(vertical: 3),
+                                  child: Row(
+                                    children: [
+                                      Expanded(
+                                        child: Text(e.key,
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis),
+                                      ),
+                                      Text(money(e.value),
+                                          style: const TextStyle(
+                                              fontWeight: FontWeight.w600)),
+                                    ],
+                                  ),
+                                ),
                             ],
                           ),
                         ),

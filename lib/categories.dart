@@ -11,6 +11,9 @@ const propinaCategory = "Propinas";
 /// solo baja el sobrante hasta que la devuelvan.
 const prestamoCategory = "Préstamos";
 
+/// Ofrendas, diezmo y lo que pide la iglesia. Tiene su propio informe.
+const iglesiaCategory = "Iglesia";
+
 /// Si los movimientos de esta categoría son gasto real (no ahorro ni
 /// préstamo).
 bool isSpendingCategory(String category) =>
@@ -26,6 +29,7 @@ final Map<String, IconData> _builtInIcons = {
   "Salud": Icons.medical_services_outlined,
   "Educación": Icons.school_outlined,
   "Familia": Icons.family_restroom,
+  iglesiaCategory: Icons.church_outlined,
   "Hogar": Icons.chair_outlined,
   "Ropa y cuidado": Icons.checkroom,
   "Ocio": Icons.local_activity_outlined,
@@ -49,6 +53,7 @@ const Map<String, Color> _builtInColors = {
   "Salud": Color(0xFFE11D48),
   "Educación": Color(0xFF4F46E5),
   "Familia": Color(0xFF65A30D),
+  iglesiaCategory: Color(0xFF9F1239),
   "Hogar": Color(0xFF92400E),
   "Ropa y cuidado": Color(0xFFC026D3),
   "Ocio": Color(0xFFEC4899),
@@ -71,6 +76,7 @@ const Map<String, String> categoryExamples = {
   "Salud": "Farmacia, consultas",
   "Educación": "Colegio, cursos, libros",
   "Familia": "Hijos, padres",
+  iglesiaCategory: "Diezmo, ofrendas, ayudas, materiales",
   "Hogar": "Muebles, limpieza, arreglos",
   "Ropa y cuidado": "Ropa, zapatillas, peluquería",
   "Ocio": "Cine, salidas, fiestas, bebidas",
@@ -81,6 +87,15 @@ const Map<String, String> categoryExamples = {
   propinaCategory: "Dinero libre de cada uno",
   ahorroCategory: "Aportes a metas y ahorro",
 };
+
+/// Notas que se ofrecen con un toque al registrar en estas categorías. Se
+/// buscan por nombre, sin importar mayúsculas.
+const Map<String, List<String>> _noteSuggestions = {
+  "iglesia": ["Diezmo", "Ofrenda", "Ayuda", "Apoyo", "Materiales"],
+};
+
+List<String> noteSuggestions(String category) =>
+    _noteSuggestions[category.trim().toLowerCase()] ?? const [];
 
 /// Categorías que ya no trae la app y a cuál pasan sus gastos. Mientras no
 /// se pasen se siguen viendo con su ícono y color de antes.

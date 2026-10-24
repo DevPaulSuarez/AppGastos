@@ -15,6 +15,9 @@ import 'package:primera_app_curso/pages/detail_page_container.dart';
 import 'package:primera_app_curso/pages/ui/cash_sheet.dart';
 import 'package:primera_app_curso/pages/ui/day_sheet.dart';
 import 'package:primera_app_curso/theme.dart';
+import 'package:primera_app_curso/tithe.dart';
+import 'package:primera_app_curso/expenses_repository.dart';
+import 'package:primera_app_curso/pages/church_page.dart';
 
 enum GraphType { LINES, PIE }
 
@@ -54,6 +57,9 @@ class MonthWidget extends StatefulWidget {
   /// Pagos fijos del mes en curso, con su "Ya pagué".
   final List<FixedPayment> fixedPayments;
 
+  /// Diezmo del mes en curso, si lo apartan (null si no).
+  final Tithe? tithe;
+
   /// Dinero libre que traían al empezar el mes (de meses anteriores o del
   /// punto de partida), sin contar lo apartado como ahorro.
   final double carriedOver;
@@ -77,6 +83,7 @@ class MonthWidget extends StatefulWidget {
     this.onDismissAlert,
     this.upcoming = const [],
     this.fixedPayments = const [],
+    this.tithe,
     this.carriedOver = 0,
     required List<Expense> documents,
     required int days,
@@ -144,11 +151,13 @@ class MonthWidget extends StatefulWidget {
   double get toReceive =>
       upcoming.where((u) => u.isIncome).fold(0.0, (a, u) => a + u.amount);
 
+  /// Lo que falta pagar este mes, con el diezmo por dar.
   double get toPay =>
-      upcoming.where((u) => !u.isIncome).fold(0.0, (a, u) => a + u.amount);
+      upcoming.where((u) => !u.isIncome).fold(0.0, (a, u) => a + u.amount) +
+      (tithe?.pending ?? 0);
 
   /// Lo que se puede gastar sin tocar la plata separada para lo que falta
-  /// pagar este mes (ej. el alquiler).
+  /// pagar este mes (ej. el alquiler, el diezmo).
   double get freeToSpend => available - toPay;
 
   /// Con cuánto libre cerrarían el mes si todo lo que falta se cobra y se
@@ -198,6 +207,10 @@ class _MonthWidgetState extends State<MonthWidget> {
         if (widget.fixedPayments.isNotEmpty) ...[
           const SizedBox(height: 12),
           _pagosFijos(),
+        ],
+        if (widget.tithe != null) ...[
+          const SizedBox(height: 12),
+          _diezmo(widget.tithe!),
         ],
         const SizedBox(height: 16),
         if (widget.total > 0 || widget.saved > 0) ...[
@@ -785,6 +798,127 @@ class _MonthWidgetState extends State<MonthWidget> {
           ],
         ),
       ),
+    );
+  }
+
+  /// El diezmo del mes: el 10% del sueldo que ya llegó, lo dado y lo que
+  /// falta. Lo que falta queda separado de "Libre para gastar" hasta fin de
+  /// mes, cuando se da.
+  Widget _diezmo(Tithe tithe) {
+    final scheme = Theme.of(context).colorScheme;
+    final done = tithe.owed > 0 && tithe.pending < 0.005;
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                const CategoryAvatar(iglesiaCategory, size: 40),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Diezmo',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 16,
+                        ),
+                      ),
+                      Text(
+                        tithe.income <= 0
+                            ? 'Aún no llega el sueldo este mes'
+                            : '$tithePercent% del sueldo que llegó '
+                                  '(${money(tithe.income)}): '
+                                  '${money(tithe.owed)}',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: scheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (done)
+                  Text(
+                    '✓ Dado',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w700,
+                      color: context.money.income,
+                    ),
+                  )
+                else if (tithe.pending > 0)
+                  FilledButton.tonal(
+                    style: FilledButton.styleFrom(
+                      minimumSize: const Size(0, 36),
+                      visualDensity: VisualDensity.compact,
+                    ),
+                    onPressed: () => _giveTithe(tithe),
+                    child: const Text('Ya lo di'),
+                  ),
+              ],
+            ),
+            if (tithe.owed > 0) ...[
+              const SizedBox(height: 8),
+              Text(
+                tithe.pending > 0
+                    ? '${money(tithe.pending)} apartados para darlos a fin '
+                          'de mes (${_dayLabel(DateTime(widget.year, widget.month + 2, 0))})'
+                          '${tithe.given > 0 ? ' · ya diste ${money(tithe.given)}' : ''}'
+                    : 'Diste ${money(tithe.given)} este mes',
+                style: TextStyle(fontSize: 13, color: scheme.onSurfaceVariant),
+              ),
+            ],
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                icon: const Icon(Icons.receipt_long_outlined, size: 18),
+                label: const Text('Ver informe de la iglesia'),
+                onPressed: () => openChurchReport(context, widget.year),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Anota el diezmo dado hoy en la categoría de la iglesia.
+  Future<void> _giveTithe(Tithe tithe) async {
+    final db = Provider.of<ExpensesRepository>(context, listen: false);
+    final messenger = ScaffoldMessenger.of(context);
+    final people = widget.people;
+    final values = await showFieldsDialog(
+      context,
+      title: '¿Ya diste el diezmo?',
+      confirm: 'Sí, ya lo di',
+      hint: 'Falta dar ${money(tithe.pending)}. Si diste una parte, cámbialo.',
+      fields: [
+        DialogField(
+          '¿Cuánto diste?',
+          initial: _plain(tithe.pending),
+          number: true,
+        ),
+        if (people.length > 1)
+          DialogField('Quién lo dio', initial: people[0], options: people),
+      ],
+      validate: (v) =>
+          (parseAmount(v[0]) ?? 0) <= 0 ? 'Escribe un monto mayor que 0' : null,
+    );
+    if (values == null) return;
+    final amount = parseAmount(values[0])!;
+    await db.add(
+      iglesiaCategory,
+      amount,
+      DateTime.now(),
+      titheNote,
+      paidBy: people.length > 1 ? people.indexOf(values[1]) : 0,
+    );
+    messenger.showSnackBar(
+      SnackBar(content: Text('Diezmo anotado: ${money(amount)}')),
     );
   }
 
