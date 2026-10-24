@@ -188,25 +188,65 @@ class FinanceRepository {
 
   static const _titheId = 'tithe';
 
-  /// Si apartan el diezmo (el 10% de lo que entra). Apagado al empezar.
-  Stream<bool> watchTitheOn() => store.watch(_settings).map(
-    (docs) =>
-        docs.where((d) => d.id == _titheId).firstOrNull?.data['on'] == true,
-  );
+  /// Quién aparta su diezmo y los montos cambiados. Apagado al empezar.
+  Stream<TitheSettings> watchTithe() => store
+      .watch(_settings)
+      .map(
+        (docs) => TitheSettings.fromMap(
+          docs.where((d) => d.id == _titheId).firstOrNull?.data,
+        ),
+      );
 
-  Future<void> setTitheOn(bool on) =>
-      store.set(_settings, _titheId, {'on': on});
+  /// Prende o apaga el diezmo de una persona.
+  Future<void> setTitheOn(int person, bool on) async {
+    final s = await watchTithe().first;
+    await store.set(
+      _settings,
+      _titheId,
+      TitheSettings(
+        people: on ? {...s.people, person} : ({...s.people}..remove(person)),
+        amounts: s.amounts,
+      ).toMap(),
+    );
+  }
 
-  /// Lo que falta dar de diezmo este mes (0 si no lo apartan).
+  /// Cambia el diezmo de una persona en un mes; null vuelve al 10%.
+  Future<void> setTitheAmount(
+    int person,
+    int month,
+    int year,
+    double? amount,
+  ) async {
+    final s = await watchTithe().first;
+    final key = TitheSettings.key(year, month, person);
+    await store.set(
+      _settings,
+      _titheId,
+      TitheSettings(
+        people: s.people,
+        amounts: amount == null
+            ? ({...s.amounts}..remove(key))
+            : {...s.amounts, key: amount},
+      ).toMap(),
+    );
+  }
+
+  /// Lo que falta dar de diezmo este mes, de todos (0 si no lo apartan).
   Future<double> pendingTithe({DateTime? today}) async {
-    if (!await watchTitheOn().first) return 0;
+    final settings = await watchTithe().first;
+    if (!settings.on) return 0;
     final now = today ?? DateTime.now();
     final expenses = (await store.watch('expenses').first)
         .map((d) => Expense.fromMap(d.id, d.data))
-        .where((e) => e.month == now.month && e.year == now.year)
         .toList();
-    return Tithe.of(await watchIncomes(now.month, now.year).first, expenses)
-        .pending;
+    return Tithes.of(
+      settings,
+      await watchIncomes(now.month, now.year).first,
+      expenses,
+      now.month,
+      now.year,
+      count: (await watchPeople().first).length,
+    ).pending;
   }
 
   /// En qué parte de la primera configuración está la cuenta.

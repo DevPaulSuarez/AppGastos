@@ -69,13 +69,13 @@ class _ChurchPageState extends State<ChurchPage> {
         streams: [
           db.queryByYear(year),
           finance.watchIncomesByYear(year),
-          finance.watchTitheOn(),
+          finance.watchTithe(),
           finance.watchPeople(),
         ],
         builder: (context, values) {
           final all = values[0] as List<Expense>;
           final incomes = values[1] as List<Income>;
-          final titheOn = values[2] == true;
+          final tithe = values[2] as TitheSettings;
           final people = values[3] as List<String>;
           final church =
               all.where((e) => e.category == iglesiaCategory).toList()..sort(
@@ -83,7 +83,7 @@ class _ChurchPageState extends State<ChurchPage> {
                     ? b.month.compareTo(a.month)
                     : b.day.compareTo(a.day),
               );
-          return _report(context, church, all, incomes, titheOn, people);
+          return _report(context, church, all, incomes, tithe, people);
         },
       ),
     );
@@ -94,7 +94,7 @@ class _ChurchPageState extends State<ChurchPage> {
     List<Expense> church,
     List<Expense> all,
     List<Income> incomes,
-    bool titheOn,
+    TitheSettings tithe,
     List<String> people,
   ) {
     final scheme = Theme.of(context).colorScheme;
@@ -112,7 +112,11 @@ class _ChurchPageState extends State<ChurchPage> {
 
     final months = <int>{for (final e in church) e.month}.toList()
       ..sort((a, b) => b.compareTo(a));
-    final yearTithe = Tithe.of(incomes, all);
+    // Cada mes tiene su diezmo (puede haberse cambiado a mano).
+    final yearTithe = Tithes([
+      for (var m = 1; m <= 12; m++)
+        ...Tithes.of(tithe, incomes, all, m, year, count: people.length).people,
+    ]);
 
     final muted = TextStyle(color: scheme.onSurfaceVariant, fontSize: 13);
     return ListView(
@@ -143,13 +147,21 @@ class _ChurchPageState extends State<ChurchPage> {
             ),
           ),
         ),
-        if (titheOn && yearTithe.income > 0)
+        if (tithe.on && yearTithe.owed > 0)
           Card(
             child: ListTile(
               title: const Text('Diezmo del año'),
               subtitle: Text(
-                '$tithePercent% del sueldo (${money(yearTithe.income)}): '
-                '${money(yearTithe.owed)} · diste ${money(yearTithe.given)}',
+                [
+                  for (final p in tithe.people.toList()..sort())
+                    if (p < people.length)
+                      _yearLine(
+                        Tithes(
+                          yearTithe.people.where((t) => t.person == p).toList(),
+                        ),
+                        people.length > 1 ? personName(people, p) : null,
+                      ),
+                ].join('\n'),
               ),
             ),
           ),
@@ -181,11 +193,16 @@ class _ChurchPageState extends State<ChurchPage> {
           ),
           _title(context, 'Mes a mes'),
           for (final m in months)
-            _month(context, m, church, all, incomes, titheOn, people),
+            _month(context, m, church, all, incomes, tithe, people),
         ],
       ],
     );
   }
+
+  /// Lo que tocaba dar en el año y lo que dio una persona.
+  String _yearLine(Tithes t, String? name) =>
+      '${name == null ? '' : '$name: '}tocaba ${money(t.owed)} · '
+      'diste ${money(t.given)}';
 
   Widget _title(BuildContext context, String text) => Padding(
     padding: const EdgeInsets.fromLTRB(4, 20, 4, 8),
@@ -203,15 +220,19 @@ class _ChurchPageState extends State<ChurchPage> {
     List<Expense> church,
     List<Expense> all,
     List<Income> incomes,
-    bool titheOn,
+    TitheSettings tithe,
     List<String> people,
   ) {
     final scheme = Theme.of(context).colorScheme;
     final items = church.where((e) => e.month == month).toList();
     final total = items.fold(0.0, (a, e) => a + e.value);
-    final tithe = Tithe.of(
-      incomes.where((i) => i.month == month).toList(),
-      all.where((e) => e.month == month).toList(),
+    final monthTithe = Tithes.of(
+      tithe,
+      incomes,
+      all,
+      month,
+      year,
+      count: people.length,
     );
     final name = monthNames[month - 1];
     final short = name.substring(0, 3).toLowerCase();
@@ -223,12 +244,13 @@ class _ChurchPageState extends State<ChurchPage> {
           name[0] + name.substring(1).toLowerCase(),
           style: const TextStyle(fontWeight: FontWeight.w600),
         ),
-        subtitle: titheOn && tithe.owed > 0
+        subtitle: monthTithe.owed > 0
             ? Text(
-                'Diezmo: diste ${money(tithe.given)} de ${money(tithe.owed)}',
+                'Diezmo: diste ${money(monthTithe.given)} de '
+                '${money(monthTithe.owed)}',
                 style: TextStyle(
                   fontSize: 12,
-                  color: tithe.pending > 0.005
+                  color: monthTithe.pending > 0.005
                       ? scheme.error
                       : scheme.onSurfaceVariant,
                 ),
