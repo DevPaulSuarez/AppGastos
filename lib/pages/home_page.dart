@@ -16,6 +16,7 @@ import 'package:primera_app_curso/pages/couple/couple_pages.dart';
 import 'package:primera_app_curso/pages/report_page.dart';
 import 'package:primera_app_curso/pages/ui/multi_stream_builder.dart';
 import 'package:primera_app_curso/theme.dart';
+import 'package:primera_app_curso/tithe.dart';
 import 'package:primera_app_curso/utils.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -278,6 +279,7 @@ class _InicioState extends State<Inicio> {
                 finance.watchAllIncomes(),
                 db.queryAll(),
                 finance.watchCashCheck(),
+                finance.watchTitheOn(),
               ],
               builder: (BuildContext context, List<Object?> values) {
                 final docs = values[0] as List<Expense>;
@@ -303,6 +305,10 @@ class _InicioState extends State<Inicio> {
                         ...incomes.map((i) => i.id),
                       }, DateTime.now())
                     : <Upcoming>[];
+                // El diezmo por dar queda separado, como un pago fijo.
+                final tithe = _isCurrentMonth && values[9] == true
+                    ? Tithe.of(incomes, docs)
+                    : null;
                 // Sin movimientos, pendientes ni dinero de antes no hay nada
                 // que mostrar.
                 if (docs.isEmpty &&
@@ -316,9 +322,11 @@ class _InicioState extends State<Inicio> {
                   incomes.fold(0.0, (sum, i) => sum + i.amount),
                   month,
                   selectedYear,
-                  pendingPayments: upcoming
-                      .where((u) => !u.isIncome)
-                      .fold(0.0, (a, u) => a + u.amount),
+                  pendingPayments:
+                      upcoming
+                          .where((u) => !u.isIncome)
+                          .fold(0.0, (a, u) => a + u.amount) +
+                      (tithe?.pending ?? 0),
                   // Lo de fecha variable es un estimado: no se cuenta como
                   // ingreso seguro.
                   pendingIncome: upcoming
@@ -340,6 +348,7 @@ class _InicioState extends State<Inicio> {
                           selectedYear,
                         )
                       : const [],
+                  tithe: tithe,
                   onDismissAlert: _hideAlert,
                   days: daysInMonth(month, selectedYear),
                   documents: docs,

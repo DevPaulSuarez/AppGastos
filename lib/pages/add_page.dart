@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:primera_app_curso/categories.dart';
 import 'package:primera_app_curso/currency.dart';
+import 'package:primera_app_curso/expense.dart';
 import 'package:primera_app_curso/category_select_widget.dart';
 import 'package:primera_app_curso/expenses_repository.dart';
 import 'package:primera_app_curso/finance_repository.dart';
@@ -31,6 +32,10 @@ class _AddPageState extends State<AddPage> with SingleTickerProviderStateMixin {
 
   String? category;
   String? detalle;
+
+  /// Notas que se ofrecen con un toque para la categoría elegida: las
+  /// sugeridas y las que más se usaron antes.
+  List<String> _quickNotes = const [];
 
   /// Si es una compra para otra persona que la devolverá: su nombre.
   String? owedBy;
@@ -217,14 +222,70 @@ class _AddPageState extends State<AddPage> with SingleTickerProviderStateMixin {
             child: CategorySelectionWidget(
               categories: categories.keys.toList(),
               selected: category,
-              onSelected: (newCategory) =>
-                  setState(() => category = newCategory),
+              onSelected: _selectCategory,
             ),
           ),
+        if (!isIncome && _quickNotes.isNotEmpty) _quickNotesRow(),
         _payerSelector(),
         _numpad(),
         SizedBox(height: _buttonHeight + 24 + bottom),
       ],
+    );
+  }
+
+  void _selectCategory(String newCategory) {
+    setState(() {
+      category = newCategory;
+      _quickNotes = noteSuggestions(newCategory);
+    });
+    Provider.of<ExpensesRepository>(context, listen: false)
+        .queryAllByCategory(newCategory)
+        .first
+        .then((expenses) {
+      if (!mounted || category != newCategory) return;
+      setState(() => _quickNotes = _mergeNotes(newCategory, expenses));
+    });
+  }
+
+  /// Las sugeridas primero y luego las notas más usadas, sin repetir.
+  List<String> _mergeNotes(String category, List<Expense> expenses) {
+    final counts = <String, int>{};
+    for (final e in expenses) {
+      final note = e.description.trim();
+      // Sin nota se guarda el nombre de la categoría.
+      if (note.isEmpty || note == category) continue;
+      counts[note] = (counts[note] ?? 0) + 1;
+    }
+    final used = counts.keys.toList()
+      ..sort((a, b) => counts[b]!.compareTo(counts[a]!));
+    final notes = <String>[];
+    for (final note in [...noteSuggestions(category), ...used]) {
+      if (!notes.any((n) => n.toLowerCase() == note.toLowerCase())) {
+        notes.add(note);
+      }
+    }
+    return notes.take(8).toList();
+  }
+
+  Widget _quickNotesRow() {
+    return SizedBox(
+      height: 48,
+      child: ListView(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        children: [
+          for (final note in _quickNotes)
+            Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: ChoiceChip(
+                label: Text(note),
+                selected: detalle == note,
+                onSelected: (selected) =>
+                    setState(() => detalle = selected ? note : null),
+              ),
+            ),
+        ],
+      ),
     );
   }
 

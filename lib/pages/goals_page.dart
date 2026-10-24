@@ -9,6 +9,7 @@ import 'package:primera_app_curso/models.dart';
 import 'package:primera_app_curso/pages/ui/dialogs.dart';
 import 'package:primera_app_curso/pages/ui/multi_stream_builder.dart';
 import 'package:primera_app_curso/theme.dart';
+import 'package:primera_app_curso/tithe.dart';
 import 'package:primera_app_curso/utils.dart';
 import 'package:provider/provider.dart';
 
@@ -39,6 +40,7 @@ class GoalsPage extends StatelessWidget {
           finance.watchAllIncomes(),
           finance.watchCashCheck(),
           finance.watchRecurring(),
+          finance.watchTitheOn(),
         ],
         builder: (context, values) {
           final goals = values[0] as List<Goal>;
@@ -48,13 +50,26 @@ class GoalsPage extends StatelessWidget {
               .where((e) => e.category == ahorroCategory)
               .toList();
           // Se puede apartar lo que dice "Tienes disponible" en Inicio,
-          // menos lo que todavía falta pagar este mes (ej. el alquiler).
+          // menos lo que todavía falta pagar este mes (ej. el alquiler) y el
+          // diezmo por dar.
           final now = DateTime.now();
-          final toPay = FinanceRepository.toPayThisMonth(
-            values[5] as List<Recurring>,
-            {for (final e in all) e.id},
-            now,
-          );
+          final tithe = values[6] == true
+              ? Tithe.of(
+                  (values[3] as List<Income>)
+                      .where((i) => i.month == now.month && i.year == now.year)
+                      .toList(),
+                  all
+                      .where((e) => e.month == now.month && e.year == now.year)
+                      .toList(),
+                ).pending
+              : 0.0;
+          final toPay =
+              FinanceRepository.toPayThisMonth(
+                values[5] as List<Recurring>,
+                {for (final e in all) e.id},
+                now,
+              ) +
+              tithe;
           final available =
               cashSummaryUntil(
                 values[3] as List<Income>,

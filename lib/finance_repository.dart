@@ -6,6 +6,7 @@ import 'package:primera_app_curso/currency.dart';
 import 'package:primera_app_curso/data/store.dart';
 import 'package:primera_app_curso/expense.dart';
 import 'package:primera_app_curso/models.dart';
+import 'package:primera_app_curso/tithe.dart';
 import 'package:primera_app_curso/utils.dart';
 
 /// Primera vez que se abre la app: elegir si la cuenta es individual o de
@@ -181,6 +182,31 @@ class FinanceRepository {
       // La primera vez sigue la configuración inicial (sueldos y fijos).
       if (doc == null) "setupPending": true,
     });
+  }
+
+  // Diezmo
+
+  static const _titheId = 'tithe';
+
+  /// Si apartan el diezmo (el 10% de lo que entra). Apagado al empezar.
+  Stream<bool> watchTitheOn() => store.watch(_settings).map(
+    (docs) =>
+        docs.where((d) => d.id == _titheId).firstOrNull?.data['on'] == true,
+  );
+
+  Future<void> setTitheOn(bool on) =>
+      store.set(_settings, _titheId, {'on': on});
+
+  /// Lo que falta dar de diezmo este mes (0 si no lo apartan).
+  Future<double> pendingTithe({DateTime? today}) async {
+    if (!await watchTitheOn().first) return 0;
+    final now = today ?? DateTime.now();
+    final expenses = (await store.watch('expenses').first)
+        .map((d) => Expense.fromMap(d.id, d.data))
+        .where((e) => e.month == now.month && e.year == now.year)
+        .toList();
+    return Tithe.of(await watchIncomes(now.month, now.year).first, expenses)
+        .pending;
   }
 
   /// En qué parte de la primera configuración está la cuenta.
@@ -978,13 +1004,14 @@ class FinanceRepository {
   ).where((u) => !u.isIncome).fold(0.0, (a, u) => a + u.amount);
 
   /// Lo que se puede apartar para ahorro o metas: lo disponible hoy sin lo
-  /// que falta pagar este mes (ej. el alquiler), para no ahorrar la plata
-  /// del alquiler.
+  /// que falta pagar este mes (ej. el alquiler) ni el diezmo por dar, para
+  /// no ahorrar esa plata.
   Future<double> freeForSavings({DateTime? today}) async {
     final now = today ?? DateTime.now();
     final ids = {for (final d in await store.watch('expenses').first) d.id};
     return await freeMoneyToday(today: now) -
-        toPayThisMonth(await watchRecurring().first, ids, now);
+        toPayThisMonth(await watchRecurring().first, ids, now) -
+        await pendingTithe(today: now);
   }
 
   /// Pagos de fecha variable (sueldos o gastos) que todavía no confirmaron

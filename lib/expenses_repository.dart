@@ -28,6 +28,10 @@ class ExpensesRepository {
     return _query({"month": month, "year": year, "category": categoryName});
   }
 
+  /// Todos los gastos de una categoría, de cualquier mes.
+  Stream<List<Expense>> queryAllByCategory(String categoryName) =>
+      _query({"category": categoryName});
+
   Stream<List<Expense>> queryByMonth(int month, int year) {
     return _query({"month": month, "year": year});
   }
