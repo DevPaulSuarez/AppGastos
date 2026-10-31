@@ -69,6 +69,13 @@ class _AddPageState extends State<AddPage> with SingleTickerProviderStateMixin {
 
   DateTime date = DateTime.now();
 
+  /// Última fecha pasada (no de hoy) con la que se guardó algo. Sirve para
+  /// preguntar si el siguiente registro va en esa misma fecha.
+  DateTime? _lastDate;
+
+  /// true si ya se eligió la fecha (con el calendario o con la pregunta).
+  bool _dateChosen = false;
+
   @override
   void initState() {
     super.initState();
@@ -114,6 +121,11 @@ class _AddPageState extends State<AddPage> with SingleTickerProviderStateMixin {
     SharedPreferences.getInstance().then((prefs) {
       final lastPayer = prefs.getInt('last_payer');
       if (lastPayer != null && mounted) setState(() => payer = lastPayer);
+      final last = prefs.getString('last_date');
+      final parsed = last == null ? null : DateTime.tryParse(last);
+      if (parsed != null && !_isToday(parsed) && mounted) {
+        setState(() => _lastDate = parsed);
+      }
     });
   }
 
@@ -123,7 +135,14 @@ class _AddPageState extends State<AddPage> with SingleTickerProviderStateMixin {
     super.dispose();
   }
 
-  String get _dateLabel {
+  static bool _isToday(DateTime d) {
+    final now = DateTime.now();
+    return d.year == now.year && d.month == now.month && d.day == now.day;
+  }
+
+  String get _dateLabel => _labelFor(date);
+
+  String _labelFor(DateTime date) {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
     final day = DateTime(date.year, date.month, date.day);
@@ -141,7 +160,65 @@ class _AddPageState extends State<AddPage> with SingleTickerProviderStateMixin {
       firstDate: DateTime(2000),
       lastDate: DateTime.now(),
     );
-    if (newDate != null) setState(() => date = newDate);
+    if (newDate != null) {
+      setState(() {
+        date = newDate;
+        _dateChosen = true;
+      });
+    }
+  }
+
+  /// Si la última vez se guardó con una fecha pasada, pregunta si este
+  /// registro es de hoy o de esa fecha. Devuelve false si se cerró sin elegir.
+  Future<bool> _askDate() async {
+    final last = _lastDate;
+    if (_dateChosen || last == null || _isToday(last)) return true;
+    final lastLabel = _labelFor(last);
+    final picked = await showDialog<DateTime>(
+      context: context,
+      builder: (context) => SimpleDialog(
+        title: const Text('¿De qué fecha es?'),
+        children: [
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(context, DateTime.now()),
+            child: const ListTile(
+              leading: Icon(Icons.today),
+              title: Text('Hoy'),
+            ),
+          ),
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(context, last),
+            child: ListTile(
+              leading: const Icon(Icons.history),
+              title: Text(lastLabel),
+              subtitle: const Text('La última fecha que usaste'),
+            ),
+          ),
+        ],
+      ),
+    );
+    if (picked == null || !mounted) return false;
+    setState(() {
+      date = picked;
+      _dateChosen = true;
+    });
+    return true;
+  }
+
+  /// Recuerda la fecha si fue pasada; si fue hoy, la olvida para no
+  /// preguntar más.
+  void _rememberDate() {
+    final saved = date;
+    SharedPreferences.getInstance().then((prefs) {
+      if (_isToday(saved)) {
+        prefs.remove('last_date');
+      } else {
+        prefs.setString(
+          'last_date',
+          DateTime(saved.year, saved.month, saved.day).toIso8601String(),
+        );
+      }
+    });
   }
 
   Future<void> _editNote() async {
@@ -238,10 +315,10 @@ class _AddPageState extends State<AddPage> with SingleTickerProviderStateMixin {
       category = newCategory;
       _quickNotes = noteSuggestions(newCategory);
     });
-    Provider.of<ExpensesRepository>(context, listen: false)
-        .queryAllByCategory(newCategory)
-        .first
-        .then((expenses) {
+    Provider.of<ExpensesRepository>(
+      context,
+      listen: false,
+    ).queryAllByCategory(newCategory).first.then((expenses) {
       if (!mounted || category != newCategory) return;
       setState(() => _quickNotes = _mergeNotes(newCategory, expenses));
     });
@@ -512,6 +589,7 @@ class _AddPageState extends State<AddPage> with SingleTickerProviderStateMixin {
   }
 
   Future<void> _save() async {
+    if (!await _askDate() || !mounted) return;
     final db = Provider.of<ExpensesRepository>(context, listen: false);
     if (isIncome) {
       final finance = Provider.of<FinanceRepository>(context, listen: false);
@@ -526,6 +604,7 @@ class _AddPageState extends State<AddPage> with SingleTickerProviderStateMixin {
       SharedPreferences.getInstance().then(
         (prefs) => prefs.setInt('last_payer', payer),
       );
+      _rememberDate();
       _controller.reverse();
       return;
     }
@@ -534,6 +613,7 @@ class _AddPageState extends State<AddPage> with SingleTickerProviderStateMixin {
           ? (category ?? 'Compra')
           : detalle!;
       db.addLoan(value, date, what, owedBy!, payer);
+      _rememberDate();
       _controller.reverse();
       return;
     }
@@ -606,6 +686,7 @@ class _AddPageState extends State<AddPage> with SingleTickerProviderStateMixin {
     SharedPreferences.getInstance().then(
       (prefs) => prefs.setInt('last_payer', payer),
     );
+    _rememberDate();
     _controller.reverse();
   }
 
