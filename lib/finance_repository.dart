@@ -6,6 +6,7 @@ import 'package:primera_app_curso/currency.dart';
 import 'package:primera_app_curso/data/store.dart';
 import 'package:primera_app_curso/expense.dart';
 import 'package:primera_app_curso/models.dart';
+import 'package:primera_app_curso/petty_cash.dart';
 import 'package:primera_app_curso/tithe.dart';
 import 'package:primera_app_curso/utils.dart';
 
@@ -247,6 +248,56 @@ class FinanceRepository {
       now.year,
       count: (await watchPeople().first).length,
     ).pending;
+  }
+
+  // Caja chica
+
+  static const _pettyCash = 'pettyCash';
+  static const _pettyCashId = 'pettyCash';
+
+  /// Si usan caja chica: lo que sobra cada mes se guarda ahí y el mes
+  /// empieza de cero. Apagado al empezar.
+  Stream<bool> watchPettyCashOn() => store
+      .watch(_settings)
+      .map(
+        (docs) =>
+            docs.where((d) => d.id == _pettyCashId).firstOrNull?.data['on'] ==
+            true,
+      );
+
+  Future<void> setPettyCashOn(bool on) =>
+      store.set(_settings, _pettyCashId, {'on': on});
+
+  /// Lo que sacaron o devolvieron a la caja chica, de todos los meses.
+  Stream<List<PettyCashMove>> watchPettyCash() => store
+      .watch(_pettyCash)
+      .map(
+        (docs) => [for (final d in docs) PettyCashMove.fromMap(d.id, d.data)],
+      );
+
+  Future<void> addPettyCashMove(PettyCashMove move) =>
+      store.add(_pettyCash, move.toMap());
+
+  Future<void> deletePettyCashMove(String id) => store.delete(_pettyCash, id);
+
+  /// Cuánto hay de verdad hoy en la caja chica ([real]). Corrige el punto de
+  /// partida para que la caja de la app ([calculated]) dé lo mismo.
+  Future<void> setPettyCashAmount(double real, double calculated) async {
+    final delta = real - calculated;
+    if (delta.abs() < 0.005) return;
+    final check = await watchCashCheck().first;
+    if (check == null || check.offsets.isEmpty) {
+      final people = (await watchPeople().first).length;
+      await saveCashCheck(
+        CashCheck(
+          offsets: [delta, for (var i = 1; i < people; i++) 0],
+          realAmounts: const [],
+          date: DateTime.now(),
+        ),
+      );
+    } else {
+      await _shiftStartingMoney(0, delta);
+    }
   }
 
   /// En qué parte de la primera configuración está la cuenta.

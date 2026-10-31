@@ -43,6 +43,7 @@ class _SettingsPageState extends State<SettingsPage> {
           finance.watchBudgets(),
           finance.watchSolo(),
           finance.watchTithe(),
+          finance.watchPettyCashOn(),
         ],
         builder: (context, values) {
           final people = values[0] as List<String>;
@@ -50,6 +51,7 @@ class _SettingsPageState extends State<SettingsPage> {
           final budgets = values[2] as Map<String, double>;
           final solo = values[3] as bool? ?? false;
           final tithe = values[4] as TitheSettings;
+          final pettyCash = values[5] as bool;
           final incomes = recurring
               .where((r) => r.type == RecurringType.income)
               .toList();
@@ -196,6 +198,19 @@ class _SettingsPageState extends State<SettingsPage> {
                       ),
                   ],
                 ),
+              ),
+              const _Section('Caja chica'),
+              SwitchListTile(
+                secondary: const Icon(Icons.inventory_2_outlined),
+                title: const Text('Guardar lo que sobra en la caja chica'),
+                subtitle: Text(
+                  pettyCash
+                      ? 'Cada mes empieza de cero. Lo que sobra pasa a la '
+                            'caja chica y de ahí pueden sacar prestado'
+                      : 'Apagado. Lo que sobra un mes se suma al siguiente',
+                ),
+                value: pettyCash,
+                onChanged: finance.setPettyCashOn,
               ),
               const _Section(
                 'Iglesia',

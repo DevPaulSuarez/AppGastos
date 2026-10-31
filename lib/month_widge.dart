@@ -15,6 +15,7 @@ import 'package:primera_app_curso/pages/detail_page_container.dart';
 import 'package:primera_app_curso/pages/ui/cash_sheet.dart';
 import 'package:primera_app_curso/pages/ui/day_sheet.dart';
 import 'package:primera_app_curso/theme.dart';
+import 'package:primera_app_curso/petty_cash.dart';
 import 'package:primera_app_curso/tithe.dart';
 import 'package:primera_app_curso/expenses_repository.dart';
 import 'package:primera_app_curso/pages/church_page.dart';
@@ -64,6 +65,10 @@ class MonthWidget extends StatefulWidget {
   /// punto de partida), sin contar lo apartado como ahorro.
   final double carriedOver;
 
+  /// Caja chica del mes, si la usan (null si no). Con caja chica el mes
+  /// empieza de cero: lo de antes está en la caja y no en [carriedOver].
+  final PettyCashMonth? pettyCash;
+
   /// Alerta a mostrar arriba (null si no hay o ya se ocultó).
   final SpendingAlert? alert;
   final VoidCallback? onDismissAlert;
@@ -85,6 +90,7 @@ class MonthWidget extends StatefulWidget {
     this.fixedPayments = const [],
     this.tithe,
     this.carriedOver = 0,
+    this.pettyCash,
     required List<Expense> documents,
     required int days,
   }) : allDocuments = documents,
@@ -145,8 +151,14 @@ class MonthWidget extends StatefulWidget {
   /// Resultado del mes: lo que entró menos lo gastado, ahorrado y prestado.
   double get leftover => incomes - total - saved - lent;
 
-  /// Lo que tienen libre hoy: lo que traían más el resultado del mes.
-  double get available => carriedOver + leftover;
+  /// Lo que tienen libre hoy: lo que traían más el resultado del mes. Con
+  /// caja chica, el resultado del mes más lo que sacaron de la caja.
+  double get available => pettyCash == null
+      ? carriedOver + leftover
+      : leftover + pettyCash!.taken - pettyCash!.returned;
+
+  /// Lo que falta devolver a la caja chica este mes.
+  double get owed => pettyCash?.owed ?? 0;
 
   double get toReceive =>
       upcoming.where((u) => u.isIncome).fold(0.0, (a, u) => a + u.amount);
@@ -158,11 +170,11 @@ class MonthWidget extends StatefulWidget {
 
   /// Lo que se puede gastar sin tocar la plata separada para lo que falta
   /// pagar este mes (ej. el alquiler, el diezmo).
-  double get freeToSpend => available - toPay;
+  double get freeToSpend => available - toPay - owed;
 
   /// Con cuánto libre cerrarían el mes si todo lo que falta se cobra y se
   /// paga.
-  double get projected => available + toReceive - toPay;
+  double get projected => available + toReceive - toPay - owed;
 
   @override
   _MonthWidgetState createState() => _MonthWidgetState();
@@ -192,6 +204,10 @@ class _MonthWidgetState extends State<MonthWidget> {
                 ),
         ),
         _resumen(),
+        if (widget.pettyCash != null && !widget.pettyCash!.isEmpty) ...[
+          const SizedBox(height: 12),
+          _cajaChica(widget.pettyCash!),
+        ],
         if (widget.incomeItems.isNotEmpty) ...[
           const SizedBox(height: 12),
           _ingresos(),
@@ -1110,6 +1126,363 @@ class _MonthWidgetState extends State<MonthWidget> {
     );
   }
 
+  /// La caja chica: lo que sobró de los meses anteriores. En el mes en curso
+  /// se puede sacar como préstamo y devolver; en los pasados se ve cómo
+  /// quedó.
+  Widget _cajaChica(PettyCashMonth box) {
+    final scheme = Theme.of(context).colorScheme;
+    final muted = TextStyle(fontSize: 12, color: scheme.onSurfaceVariant);
+    final current = _isCurrentMonth;
+    final String detail;
+    if (!current) {
+      detail = box.result >= 0
+          ? 'Entraron ${money(box.result)} que sobraron este mes'
+          : 'Salieron ${money(-box.result)} que faltaron este mes';
+    } else if (box.owed > 0) {
+      detail =
+          'Sacaron ${money(box.taken)} · falta devolver ${money(box.owed)}';
+    } else if (box.taken > 0) {
+      detail = 'Sacaron ${money(box.taken)} y ya lo devolvieron ✓';
+    } else {
+      detail = 'Lo que sobró de los meses anteriores';
+    }
+    final amount = current ? box.inBox : box.end;
+    return Card(
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: () => _pettyCashSheet(box),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  CircleAvatar(
+                    radius: 20,
+                    backgroundColor: scheme.secondaryContainer,
+                    child: Icon(
+                      Icons.inventory_2_outlined,
+                      color: scheme.onSecondaryContainer,
+                      size: 20,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          current ? 'Caja chica' : 'Caja chica al terminar',
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w700,
+                            fontSize: 16,
+                          ),
+                        ),
+                        Text(
+                          detail,
+                          style: box.owed > 0 && current
+                              ? muted.copyWith(color: context.money.warning)
+                              : muted,
+                        ),
+                      ],
+                    ),
+                  ),
+                  Text(
+                    amount < 0 ? '−${money(-amount)}' : money(amount),
+                    style: TextStyle(
+                      fontWeight: FontWeight.w800,
+                      fontSize: 16,
+                      color: amount < 0 ? context.money.expense : null,
+                    ),
+                  ),
+                ],
+              ),
+              if (current)
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    TextButton(
+                      onPressed: () => _takeFromBox(box),
+                      child: const Text('Sacar'),
+                    ),
+                    if (box.owed > 0) ...[
+                      const SizedBox(width: 4),
+                      FilledButton.tonal(
+                        style: FilledButton.styleFrom(
+                          minimumSize: const Size(0, 36),
+                          visualDensity: VisualDensity.compact,
+                        ),
+                        onPressed: () => _returnToBox(box),
+                        child: const Text('Ya devolví'),
+                      ),
+                    ],
+                  ],
+                )
+              else
+                const SizedBox(height: 4),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Anota que hoy sacaron dinero de la caja chica para el mes.
+  Future<void> _takeFromBox(PettyCashMonth box) async {
+    final finance = Provider.of<FinanceRepository>(context, listen: false);
+    final messenger = ScaffoldMessenger.of(context);
+    final values = await showFieldsDialog(
+      context,
+      title: 'Sacar de la caja chica',
+      confirm: 'Sacar',
+      hint:
+          'Hay ${money(box.inBox)} en la caja. Es un préstamo: '
+          '${_solo ? 'lo devuelves' : 'lo devuelven'} en este mes, cuando '
+          'llegue el sueldo.',
+      fields: [
+        DialogField(
+          _solo ? '¿Cuánto sacaste?' : '¿Cuánto sacaron?',
+          number: true,
+        ),
+      ],
+      validate: (v) =>
+          (parseAmount(v[0]) ?? 0) <= 0 ? 'Escribe un monto mayor que 0' : null,
+    );
+    if (values == null) return;
+    final amount = parseAmount(values[0])!;
+    final now = DateTime.now();
+    await finance.addPettyCashMove(
+      PettyCashMove(
+        amount: amount,
+        taken: true,
+        year: now.year,
+        month: now.month,
+        day: now.day,
+      ),
+    );
+    messenger.showSnackBar(
+      SnackBar(content: Text('Sacaron ${money(amount)} de la caja chica')),
+    );
+  }
+
+  /// Anota que hoy devolvieron (todo o una parte) a la caja chica.
+  Future<void> _returnToBox(PettyCashMonth box) async {
+    final finance = Provider.of<FinanceRepository>(context, listen: false);
+    final messenger = ScaffoldMessenger.of(context);
+    final values = await showFieldsDialog(
+      context,
+      title: _solo ? '¿Ya devolviste a la caja?' : '¿Ya devolvieron a la caja?',
+      confirm: 'Sí, ya devolví',
+      hint:
+          'Falta devolver ${money(box.owed)}. Si devolvieron solo una parte, '
+          'cambia el monto.',
+      fields: [
+        DialogField(
+          _solo ? '¿Cuánto devolviste?' : '¿Cuánto devolvieron?',
+          initial: _plain(box.owed),
+          number: true,
+        ),
+      ],
+      validate: (v) =>
+          (parseAmount(v[0]) ?? 0) <= 0 ? 'Escribe un monto mayor que 0' : null,
+    );
+    if (values == null) return;
+    final amount = parseAmount(values[0])!;
+    final now = DateTime.now();
+    await finance.addPettyCashMove(
+      PettyCashMove(
+        amount: amount,
+        taken: false,
+        year: now.year,
+        month: now.month,
+        day: now.day,
+      ),
+    );
+    messenger.showSnackBar(
+      SnackBar(content: Text('Devolvieron ${money(amount)} a la caja chica')),
+    );
+  }
+
+  /// Detalle de la caja chica en el mes: con cuánto empezó, lo que sacaron
+  /// y devolvieron (se puede borrar si fue un error) y "Corregir monto".
+  Future<void> _pettyCashSheet(PettyCashMonth box) {
+    final finance = Provider.of<FinanceRepository>(context, listen: false);
+    final current = _isCurrentMonth;
+    final monthName = monthNames[widget.month].toLowerCase();
+    return showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (sheetContext) {
+        final scheme = Theme.of(sheetContext).colorScheme;
+        Widget row(
+          String text,
+          double value, {
+          Color? color,
+          bool bold = false,
+        }) => Padding(
+          padding: const EdgeInsets.symmetric(vertical: 4),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  text,
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: bold ? FontWeight.w700 : null,
+                  ),
+                ),
+              ),
+              Text(
+                value < 0 ? '−${money(-value)}' : money(value),
+                style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: bold ? FontWeight.w800 : FontWeight.w600,
+                  color: color,
+                ),
+              ),
+            ],
+          ),
+        );
+        return SafeArea(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  'Caja chica de $monthName',
+                  style: Theme.of(
+                    sheetContext,
+                  ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Lo que sobra cada mes entra a la caja al terminar el mes. '
+                  'Lo que sacan es un préstamo que se devuelve en el mismo mes.',
+                  style: TextStyle(color: scheme.onSurfaceVariant),
+                ),
+                const SizedBox(height: 12),
+                row('Al empezar el mes', box.start),
+                if (box.taken > 0)
+                  row(
+                    '− Sacaron',
+                    box.taken,
+                    color: sheetContext.money.expense,
+                  ),
+                if (box.returned > 0)
+                  row(
+                    '+ Devolvieron',
+                    box.returned,
+                    color: sheetContext.money.income,
+                  ),
+                if (current) ...[
+                  const Divider(),
+                  row('= Hoy en la caja', box.inBox, bold: true),
+                  if (box.owed > 0)
+                    row(
+                      'Falta devolver',
+                      box.owed,
+                      color: sheetContext.money.warning,
+                    ),
+                ] else ...[
+                  row(
+                    box.inHand >= 0
+                        ? '+ Sobrante del mes'
+                        : '− Faltante del mes',
+                    box.inHand.abs(),
+                    color: box.inHand >= 0
+                        ? sheetContext.money.income
+                        : sheetContext.money.expense,
+                  ),
+                  const Divider(),
+                  row('= Al terminar el mes', box.end, bold: true),
+                ],
+                if (box.moves.isNotEmpty) ...[
+                  const SizedBox(height: 16),
+                  Text(
+                    'Movimientos',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w700,
+                      color: scheme.primary,
+                    ),
+                  ),
+                  for (final m in box.moves)
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: Icon(
+                        m.taken ? Icons.north_east : Icons.south_west,
+                        color: m.taken
+                            ? sheetContext.money.expense
+                            : sheetContext.money.income,
+                      ),
+                      title: Text(m.taken ? 'Sacaron' : 'Devolvieron'),
+                      subtitle: Text(
+                        _dayLabel(DateTime(m.year, m.month, m.day)),
+                      ),
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            money(m.amount),
+                            style: const TextStyle(fontWeight: FontWeight.w600),
+                          ),
+                          IconButton(
+                            tooltip: 'Borrar',
+                            icon: const Icon(Icons.delete_outline),
+                            onPressed: () async {
+                              if (await confirmDialog(
+                                sheetContext,
+                                '¿Borrar este movimiento de la caja chica?',
+                                confirm: 'Borrar',
+                              )) {
+                                await finance.deletePettyCashMove(m.id);
+                                if (sheetContext.mounted) {
+                                  Navigator.of(sheetContext).pop();
+                                }
+                              }
+                            },
+                          ),
+                        ],
+                      ),
+                    ),
+                ],
+                if (current) ...[
+                  const SizedBox(height: 12),
+                  OutlinedButton.icon(
+                    icon: const Icon(Icons.edit_outlined),
+                    label: const Text('Corregir lo que hay en la caja'),
+                    onPressed: () async {
+                      Navigator.of(sheetContext).pop();
+                      await _fixBoxAmount(box);
+                    },
+                  ),
+                ],
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  /// Escriben cuánto hay de verdad hoy en la caja chica y la app se ajusta.
+  Future<void> _fixBoxAmount(PettyCashMonth box) async {
+    final finance = Provider.of<FinanceRepository>(context, listen: false);
+    final values = await showFieldsDialog(
+      context,
+      title: '¿Cuánto hay hoy en la caja chica?',
+      hint:
+          'Cuenten lo que hay ahora (sin lo que sacaron este mes). '
+          'La app dice ${money(box.inBox)}.',
+      fields: [DialogField('Monto', initial: _plain(box.inBox), number: true)],
+      validate: (v) => parseAmount(v[0]) == null ? 'Escribe un monto' : null,
+    );
+    if (values == null) return;
+    await finance.setPettyCashAmount(parseAmount(values[0])!, box.inBox);
+  }
+
   Widget _porCobrar() {
     final scheme = Theme.of(context).colorScheme;
     final byPerson = <String, double>{};
@@ -1154,8 +1527,13 @@ class _MonthWidgetState extends State<MonthWidget> {
     final current = _isCurrentMonth;
     // En el mes en curso, lo libre: lo que tienen sin lo separado para
     // los pagos que faltan.
-    final reserved = current ? widget.toPay : 0.0;
+    final reserved = current ? widget.toPay + widget.owed : 0.0;
     final main = current ? widget.freeToSpend : widget.leftover;
+    final reservedFor = widget.owed <= 0
+        ? 'para los pagos del mes'
+        : widget.toPay <= 0
+        ? 'para devolver a la caja chica'
+        : 'para los pagos del mes y la caja chica';
     // En números rojos, el número y el aviso van en rojo (en el tema
     // oscuro, el mismo rojo de los gastos).
     final red = dark ? context.money.expense : const Color(0xFFFCA5A5);
@@ -1228,15 +1606,21 @@ class _MonthWidgetState extends State<MonthWidget> {
             if (current && reserved > 0)
               Text(
                 'De ${money(widget.available)} que ${_solo ? 'tienes' : 'tienen'}, '
-                '${money(reserved)} están separados '
-                'para los pagos del mes',
+                '${money(reserved)} están separados $reservedFor',
+                style: TextStyle(color: soft, fontSize: 13),
+              ),
+            if (!current && widget.pettyCash != null)
+              Text(
+                widget.leftover >= 0
+                    ? 'Pasó a la caja chica'
+                    : 'Se cubrió con la caja chica',
                 style: TextStyle(color: soft, fontSize: 13),
               ),
             if (current && main < 0)
               Text(
                 widget.available >= 0
-                    ? '${_solo ? 'Te' : 'Les'} faltan ${money(-main)} para '
-                          'los pagos del mes'
+                    ? '${_solo ? 'Te' : 'Les'} faltan ${money(-main)} '
+                          '$reservedFor'
                     : _solo
                     ? 'Gastaste más de lo que tenías'
                     : 'Gastaron más de lo que tenían',
