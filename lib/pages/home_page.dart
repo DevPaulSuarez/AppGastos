@@ -15,6 +15,7 @@ import 'package:primera_app_curso/pages/balance_page.dart';
 import 'package:primera_app_curso/pages/couple/couple_pages.dart';
 import 'package:primera_app_curso/pages/report_page.dart';
 import 'package:primera_app_curso/pages/ui/multi_stream_builder.dart';
+import 'package:primera_app_curso/petty_cash.dart';
 import 'package:primera_app_curso/theme.dart';
 import 'package:primera_app_curso/tithe.dart';
 import 'package:primera_app_curso/utils.dart';
@@ -280,6 +281,8 @@ class _InicioState extends State<Inicio> {
                 db.queryAll(),
                 finance.watchCashCheck(),
                 finance.watchTithe(),
+                finance.watchPettyCashOn(),
+                finance.watchPettyCash(),
               ],
               builder: (BuildContext context, List<Object?> values) {
                 final docs = values[0] as List<Expense>;
@@ -296,6 +299,19 @@ class _InicioState extends State<Inicio> {
                   people.length,
                   DateTime(selectedYear, month, 0),
                 ).free;
+                // Con caja chica, lo de antes queda en la caja y el mes
+                // empieza de cero.
+                final pettyCash = values[10] as bool
+                    ? PettyCashMonth.of(
+                        values[6] as List<Income>,
+                        values[7] as List<Expense>,
+                        values[8] as CashCheck?,
+                        people.length,
+                        values[11] as List<PettyCashMove>,
+                        month,
+                        selectedYear,
+                      )
+                    : null;
 
                 // Lo que todavía falta este mes: sueldos por cobrar, fijos y
                 // propinas por pagar, pagos de fecha variable por confirmar.
@@ -340,7 +356,8 @@ class _InicioState extends State<Inicio> {
                   pendingIncome: upcoming
                       .where((u) => u.isIncome && !u.needsConfirm)
                       .fold(0.0, (a, u) => a + u.amount),
-                  carriedOver: carriedOver,
+                  // Lo sacado de la caja chica se devuelve: no cuenta.
+                  carriedOver: pettyCash == null ? carriedOver : 0,
                 );
                 WidgetsBinding.instance.addPostFrameCallback(
                   (_) => _updateAlert(alert),
@@ -365,6 +382,7 @@ class _InicioState extends State<Inicio> {
                   budgets: budgets,
                   people: people,
                   carriedOver: carriedOver,
+                  pettyCash: pettyCash,
                   pendingLoans: (values[4] as List<Expense>)
                       .where((e) => e.pending > 0.001)
                       .toList(),

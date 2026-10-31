@@ -7,6 +7,7 @@ import 'package:primera_app_curso/currency.dart';
 import 'package:primera_app_curso/categories.dart';
 import 'package:primera_app_curso/expense.dart';
 import 'package:primera_app_curso/models.dart';
+import 'package:primera_app_curso/petty_cash.dart';
 import 'package:primera_app_curso/utils.dart';
 
 const _green = PdfColor.fromInt(0xFF059669);
@@ -168,6 +169,135 @@ pw.Widget _categoriesSection(Map<String, double> byCategory) {
   );
 }
 
+/// Caja chica de un mes: con cuánto empezó, lo que sacaron prestado y
+/// devolvieron, lo que dejó el mes y con cuánto terminó.
+List<pw.Widget> _pettyCashMonthSection(PettyCashMonth box) {
+  final now = DateTime.now();
+  final current = box.month == now.month && box.year == now.year;
+  pw.Widget line(String text, double value, {PdfColor? color, bool bold = false}) =>
+      pw.Padding(
+        padding: const pw.EdgeInsets.symmetric(vertical: 2.5),
+        child: pw.Row(children: [
+          pw.Expanded(
+              child: pw.Text(text,
+                  style: pw.TextStyle(
+                      fontSize: 10,
+                      fontWeight: bold ? pw.FontWeight.bold : null))),
+          pw.Text(pdfMoney(value),
+              style: pw.TextStyle(
+                  fontSize: 10,
+                  fontWeight: pw.FontWeight.bold,
+                  color: color)),
+        ]),
+      );
+  return [
+    _title('Caja chica'),
+    pw.Container(
+      padding: const pw.EdgeInsets.all(10),
+      decoration: pw.BoxDecoration(
+        color: _surface,
+        borderRadius: pw.BorderRadius.circular(8),
+      ),
+      child: pw.Column(children: [
+        line('Al empezar el mes', box.start),
+        line('- Sacaron prestado', box.taken, color: _expenseColor),
+        line('+ Devolvieron', box.returned, color: _incomeColor),
+        if (current) ...[
+          pw.Divider(color: PdfColors.grey400, height: 8),
+          line('= Hoy en la caja', box.inBox, bold: true),
+          if (box.owed > 0)
+            line('Falta devolver este mes', box.owed, color: _expenseColor),
+        ] else ...[
+          line(box.inHand >= 0 ? '+ Sobrante del mes' : '- Faltante del mes',
+              box.inHand.abs(),
+              color: box.inHand >= 0 ? _incomeColor : _expenseColor),
+          pw.Divider(color: PdfColors.grey400, height: 8),
+          line('= Al terminar el mes', box.end, bold: true),
+        ],
+      ]),
+    ),
+    if (box.moves.isNotEmpty) ...[
+      pw.SizedBox(height: 8),
+      pw.TableHelper.fromTextArray(
+        headers: ['Día', 'Préstamo de la caja chica', 'Monto'],
+        data: [
+          for (final m in box.moves)
+            [
+              '${m.day}',
+              m.taken ? 'Sacaron' : 'Devolvieron',
+              '${m.taken ? '-' : '+'} ${pdfMoney(m.amount)}',
+            ],
+        ],
+        headerStyle: _tableHeaderStyle,
+        headerDecoration: _tableHeaderDecoration,
+        cellStyle: const pw.TextStyle(fontSize: 9),
+        oddRowDecoration: const pw.BoxDecoration(color: _surface),
+        headerAlignments: {
+          0: pw.Alignment.center,
+          1: pw.Alignment.centerLeft,
+          2: pw.Alignment.centerRight,
+        },
+        cellAlignments: {
+          0: pw.Alignment.center,
+          2: pw.Alignment.centerRight,
+        },
+        columnWidths: {
+          0: const pw.FixedColumnWidth(28),
+          1: const pw.FlexColumnWidth(3),
+          2: const pw.FixedColumnWidth(80),
+        },
+        border: null,
+      ),
+    ],
+  ];
+}
+
+/// Caja chica mes a mes en el año.
+List<pw.Widget> _pettyCashYearSection(List<PettyCashMonth> months) => [
+      _title('Caja chica mes a mes'),
+      pw.TableHelper.fromTextArray(
+        headers: [
+          'Mes',
+          'Al empezar',
+          'Sacaron',
+          'Devolvieron',
+          'Sobró / faltó',
+          'Al terminar',
+        ],
+        data: [
+          for (final m in months)
+            [
+              _monthLabel(m.month),
+              pdfMoney(m.start),
+              m.taken > 0 ? pdfMoney(m.taken) : '-',
+              m.returned > 0 ? pdfMoney(m.returned) : '-',
+              '${m.result < 0 ? '-' : '+'} ${pdfMoney(m.result.abs())}',
+              pdfMoney(m.end),
+            ],
+        ],
+        headerStyle: _tableHeaderStyle,
+        headerDecoration: _tableHeaderDecoration,
+        cellStyle: const pw.TextStyle(fontSize: 9),
+        oddRowDecoration: const pw.BoxDecoration(color: _surface),
+        headerAlignments: {
+          0: pw.Alignment.centerLeft,
+          for (var c = 1; c < 6; c++) c: pw.Alignment.centerRight,
+        },
+        cellAlignments: {
+          for (var c = 1; c < 6; c++) c: pw.Alignment.centerRight,
+        },
+        border: null,
+      ),
+      pw.Padding(
+        padding: const pw.EdgeInsets.only(top: 6),
+        child: pw.Text(
+          'Lo que sobra (o falta) cada mes entra a la caja al terminar el mes. '
+          'Lo sacado se devuelve en el mismo mes.',
+          style: const pw.TextStyle(fontSize: 9, color: _muted),
+        ),
+      ),
+    ];
+
 const _tableHeaderDecoration = pw.BoxDecoration(color: _green);
 final _tableHeaderStyle = pw.TextStyle(
     fontSize: 9, fontWeight: pw.FontWeight.bold, color: PdfColors.white);
@@ -181,6 +311,7 @@ Future<Uint8List> buildMonthReport({
   required List<Income> incomes,
   required List<String> people,
   PdfPageFormat format = PdfPageFormat.a4,
+  List<PettyCashMonth> pettyCash = const [],
 }) async {
   double sum(Iterable<double> values) => values.fold(0.0, (a, b) => a + b);
   bool isSaving(Expense e) => e.category == ahorroCategory;
@@ -245,6 +376,8 @@ Future<Uint8List> buildMonthReport({
             style: const pw.TextStyle(fontSize: 10, color: _muted),
           ),
         ),
+
+      if (pettyCash.isNotEmpty) ..._pettyCashMonthSection(pettyCash.first),
 
       // Gasto por categoría
       if (byCategory.isNotEmpty) ...[
@@ -386,6 +519,7 @@ Future<Uint8List> buildYearReport({
   required List<Income> incomes,
   required List<String> people,
   PdfPageFormat format = PdfPageFormat.a4,
+  List<PettyCashMonth> pettyCash = const [],
 }) async {
   double sum(Iterable<double> values) => values.fold(0.0, (a, b) => a + b);
   bool isSaving(Expense e) => e.category == ahorroCategory;
@@ -534,6 +668,8 @@ Future<Uint8List> buildYearReport({
         },
         border: null,
       ),
+
+      if (pettyCash.isNotEmpty) ..._pettyCashYearSection(pettyCash),
 
       if (byCategory.isNotEmpty) ...[
         pw.Column(children: [

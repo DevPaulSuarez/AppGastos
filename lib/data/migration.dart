@@ -8,6 +8,7 @@ const appCollections = [
   'recurring',
   'budgets',
   'goals',
+  'pettyCash',
   'settings',
 ];
 
