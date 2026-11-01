@@ -182,6 +182,9 @@ class MonthWidget extends StatefulWidget {
 }
 
 class _MonthWidgetState extends State<MonthWidget> {
+  /// Personas abiertas en "Lo que entró" (cada una es un acordeón).
+  final Set<int> _openIncomePeople = {};
+
   GraphType graphType = GraphType.LINES;
 
   @override
@@ -602,11 +605,41 @@ class _MonthWidgetState extends State<MonthWidget> {
   Widget _ingresos() {
     final items = [...widget.incomeItems]
       ..sort((a, b) => a.day.compareTo(b.day));
+    final couple = widget.people.length > 1;
+    double totalOf(int person) => items
+        .where((i) => i.person == person)
+        .fold(0.0, (sum, i) => sum + i.amount);
+
+    Widget row(Income income) => _moveRow(
+      isIncome: true,
+      // En pareja ya van agrupados por persona.
+      name: couple
+          ? income.description
+          : _withPerson(income.description, income.person),
+      date: [
+        _dayLabel(DateTime(income.year, income.month, income.day)),
+        if (income.expected != null)
+          'llegó incompleto (era ${money(income.expected!)})',
+      ].join(' · '),
+      dateColor: income.expected == null ? null : context.money.warning,
+      amount: income.amount,
+      onTap: () => showIncomeActions(
+        context,
+        Provider.of<FinanceRepository>(context, listen: false),
+        income,
+      ),
+    );
+
     return _accordion(
       title: _isCurrentMonth
           ? 'Lo que entró este mes'
           : 'Lo que entró en ${monthNames[widget.month].toLowerCase()}',
-      summary: '${items.length} ${items.length == 1 ? 'ingreso' : 'ingresos'}',
+      summary: couple
+          ? [
+              for (var p = 0; p < widget.people.length; p++)
+                '${personName(widget.people, p)} ${money(totalOf(p))}',
+            ].join(' · ')
+          : '${items.length} ${items.length == 1 ? 'ingreso' : 'ingresos'}',
       total: Text(
         money(widget.incomes),
         style: TextStyle(
@@ -616,23 +649,24 @@ class _MonthWidgetState extends State<MonthWidget> {
         ),
       ),
       children: [
-        for (final income in items)
-          _moveRow(
-            isIncome: true,
-            name: _withPerson(income.description, income.person),
-            date: [
-              _dayLabel(DateTime(income.year, income.month, income.day)),
-              if (income.expected != null)
-                'llegó incompleto (era ${money(income.expected!)})',
-            ].join(' · '),
-            dateColor: income.expected == null ? null : context.money.warning,
-            amount: income.amount,
-            onTap: () => showIncomeActions(
-              context,
-              Provider.of<FinanceRepository>(context, listen: false),
-              income,
-            ),
-          ),
+        if (couple) ...[
+          for (var p = 0; p < widget.people.length; p++)
+            if (items.any((i) => i.person == p)) ...[
+              _personHeader(
+                personName(widget.people, p),
+                totalOf(p),
+                count: items.where((i) => i.person == p).length,
+                open: _openIncomePeople.contains(p),
+                onTap: () => setState(() {
+                  if (!_openIncomePeople.remove(p)) _openIncomePeople.add(p);
+                }),
+              ),
+              if (_openIncomePeople.contains(p))
+                for (final income in items.where((i) => i.person == p))
+                  row(income),
+            ],
+        ] else
+          for (final income in items) row(income),
         if (items.isNotEmpty)
           Padding(
             padding: const EdgeInsets.only(top: 6),
@@ -645,6 +679,62 @@ class _MonthWidgetState extends State<MonthWidget> {
             ),
           ),
       ],
+    );
+  }
+
+  /// Encabezado de cada persona en "Lo que entró": nombre, cuántos pagos y
+  /// su total. Al tocarlo se abren o cierran sus ingresos.
+  Widget _personHeader(
+    String name,
+    double total, {
+    required int count,
+    required bool open,
+    required VoidCallback onTap,
+  }) {
+    final scheme = Theme.of(context).colorScheme;
+    return InkWell(
+      borderRadius: BorderRadius.circular(8),
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    name,
+                    style: TextStyle(
+                      fontWeight: FontWeight.w800,
+                      color: scheme.onSurface,
+                    ),
+                  ),
+                  Text(
+                    '$count ${count == 1 ? 'ingreso' : 'ingresos'}',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: scheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Text(
+              money(total),
+              style: TextStyle(
+                fontWeight: FontWeight.w800,
+                color: context.money.income,
+              ),
+            ),
+            const SizedBox(width: 4),
+            Icon(
+              open ? Icons.expand_less : Icons.expand_more,
+              color: scheme.onSurfaceVariant,
+            ),
+          ],
+        ),
+      ),
     );
   }
 

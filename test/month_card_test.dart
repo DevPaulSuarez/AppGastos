@@ -117,6 +117,12 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Sueldo · Ana'), findsOneWidget);
     expect(find.text('Lo que entró este mes'), findsOneWidget);
+    // En pareja van por persona: cerrado se ve su total; al tocarla, el
+    // detalle.
+    expect(find.text('Ana S/. 1000.00 · Luis S/. 0.00'), findsOneWidget);
+    expect(find.text('+ S/. 1000.00'), findsNothing);
+    await tester.tap(find.text('Ana'));
+    await tester.pumpAndSettle();
     expect(find.text('+ S/. 1000.00'), findsOneWidget);
     // Con los ingresos abiertos, lo que falta queda más abajo.
     await tester.scrollUntilVisible(

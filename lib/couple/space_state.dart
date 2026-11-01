@@ -27,6 +27,13 @@ class SpaceState extends ChangeNotifier {
 
   Couple? get activeCouple => _couples.where((c) => c.active).firstOrNull;
 
+  /// En pareja, qué persona soy (0 quien invitó, 1 quien se unió). Null en
+  /// cuenta individual.
+  int? get myPerson {
+    final i = activeCouple?.members.indexOf(_uid ?? '') ?? -1;
+    return i < 0 ? null : i;
+  }
+
   /// Parejas anteriores, de la más reciente a la más antigua.
   List<Couple> get pastCouples =>
       _couples.where((c) => !c.active).toList()
