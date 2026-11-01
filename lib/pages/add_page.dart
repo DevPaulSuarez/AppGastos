@@ -125,6 +125,7 @@ class _AddPageState extends State<AddPage> with SingleTickerProviderStateMixin {
       final parsed = last == null ? null : DateTime.tryParse(last);
       if (parsed != null && !_isToday(parsed) && mounted) {
         setState(() => _lastDate = parsed);
+        _askDateWhenOpen();
       }
     });
   }
@@ -168,11 +169,27 @@ class _AddPageState extends State<AddPage> with SingleTickerProviderStateMixin {
     }
   }
 
+  /// Pregunta la fecha apenas termina de abrirse la pantalla.
+  void _askDateWhenOpen() {
+    if (_controller.isCompleted) {
+      _askDate();
+      return;
+    }
+    late void Function(AnimationStatus) listener;
+    listener = (status) {
+      if (status == AnimationStatus.completed) {
+        _controller.removeStatusListener(listener);
+        _askDate();
+      }
+    };
+    _controller.addStatusListener(listener);
+  }
+
   /// Si la última vez se guardó con una fecha pasada, pregunta si este
-  /// registro es de hoy o de esa fecha. Devuelve false si se cerró sin elegir.
-  Future<bool> _askDate() async {
+  /// registro es de hoy o de esa fecha. Si se cierra sin elegir, queda hoy.
+  Future<void> _askDate() async {
     final last = _lastDate;
-    if (_dateChosen || last == null || _isToday(last)) return true;
+    if (_dateChosen || last == null || _isToday(last)) return;
     final lastLabel = _labelFor(last);
     final picked = await showDialog<DateTime>(
       context: context,
@@ -197,12 +214,11 @@ class _AddPageState extends State<AddPage> with SingleTickerProviderStateMixin {
         ],
       ),
     );
-    if (picked == null || !mounted) return false;
+    if (!mounted) return;
     setState(() {
-      date = picked;
+      if (picked != null) date = picked;
       _dateChosen = true;
     });
-    return true;
   }
 
   /// Recuerda la fecha si fue pasada; si fue hoy, la olvida para no
@@ -589,7 +605,6 @@ class _AddPageState extends State<AddPage> with SingleTickerProviderStateMixin {
   }
 
   Future<void> _save() async {
-    if (!await _askDate() || !mounted) return;
     final db = Provider.of<ExpensesRepository>(context, listen: false);
     if (isIncome) {
       final finance = Provider.of<FinanceRepository>(context, listen: false);
