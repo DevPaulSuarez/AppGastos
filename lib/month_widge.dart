@@ -14,6 +14,7 @@ import 'package:primera_app_curso/graph_widget.dart';
 import 'package:primera_app_curso/pages/detail_page_container.dart';
 import 'package:primera_app_curso/pages/ui/cash_sheet.dart';
 import 'package:primera_app_curso/pages/ui/day_sheet.dart';
+import 'package:primera_app_curso/pages/ui/income_actions.dart';
 import 'package:primera_app_curso/theme.dart';
 import 'package:primera_app_curso/petty_cash.dart';
 import 'package:primera_app_curso/tithe.dart';
@@ -626,13 +627,17 @@ class _MonthWidgetState extends State<MonthWidget> {
             ].join(' · '),
             dateColor: income.expected == null ? null : context.money.warning,
             amount: income.amount,
-            onTap: income.isSalary ? () => _editSalary(income) : null,
+            onTap: () => showIncomeActions(
+              context,
+              Provider.of<FinanceRepository>(context, listen: false),
+              income,
+            ),
           ),
-        if (items.any((i) => i.isSalary))
+        if (items.isNotEmpty)
           Padding(
             padding: const EdgeInsets.only(top: 6),
             child: Text(
-              '¿Un sueldo llegó menos? Tócalo para cambiar el monto.',
+              'Toca un ingreso para cambiar el monto o la fecha, o borrarlo.',
               style: TextStyle(
                 fontSize: 12,
                 color: Theme.of(context).colorScheme.onSurfaceVariant,
@@ -641,32 +646,6 @@ class _MonthWidgetState extends State<MonthWidget> {
           ),
       ],
     );
-  }
-
-  /// Un sueldo no siempre llega completo (ej. faltó un día): se anota lo que
-  /// llegó de verdad.
-  Future<void> _editSalary(Income income) async {
-    final finance = Provider.of<FinanceRepository>(context, listen: false);
-    final full = income.expected ?? income.amount;
-    final date = _dayLabel(DateTime(income.year, income.month, income.day));
-    final values = await showFieldsDialog(
-      context,
-      title: '${income.description} del $date',
-      hint:
-          'Completo es ${money(full)}. Si faltó algún día y llegó menos, '
-          'escribe lo que llegó de verdad.',
-      fields: [
-        DialogField(
-          '¿Cuánto llegó?',
-          initial: _plain(income.amount),
-          number: true,
-        ),
-      ],
-      validate: (v) =>
-          (parseAmount(v[0]) ?? 0) <= 0 ? 'Escribe un monto mayor que 0' : null,
-    );
-    if (values == null) return;
-    await finance.setIncomeAmount(income, parseAmount(values[0])!);
   }
 
   /// Monto para un campo de texto: sin ".0" si es entero.

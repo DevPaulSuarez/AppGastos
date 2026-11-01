@@ -8,6 +8,7 @@ import 'package:primera_app_curso/graph_widget.dart';
 import 'package:primera_app_curso/models.dart';
 import 'package:primera_app_curso/pages/report_page.dart';
 import 'package:primera_app_curso/pages/ui/dialogs.dart';
+import 'package:primera_app_curso/pages/ui/income_actions.dart';
 import 'package:primera_app_curso/pages/ui/multi_stream_builder.dart';
 import 'package:primera_app_curso/theme.dart';
 import 'package:primera_app_curso/utils.dart';
@@ -187,9 +188,13 @@ class BalancePage extends StatelessWidget {
               'Ingresos',
               totalIncomes,
               color: context.money.income,
-              onTap: () => _showIncomes(context, 'Ingresos de $monthName', [
-                ...incomes,
-              ], people),
+              onTap: () => _showIncomes(
+                context,
+                finance,
+                'Ingresos de $monthName',
+                [...incomes],
+                people,
+              ),
             ),
             _row(
               'Gastos',
@@ -281,6 +286,9 @@ class BalancePage extends StatelessWidget {
             for (final income in incomes)
               ListTile(
                 contentPadding: EdgeInsets.zero,
+                onTap: readOnly
+                    ? null
+                    : () => showIncomeActions(context, finance, income),
                 leading: Icon(Icons.payments, color: context.money.income),
                 title: Text(
                   income.description.isEmpty ? 'Ingreso' : income.description,
@@ -560,6 +568,7 @@ class BalancePage extends StatelessWidget {
 
   void _showIncomes(
     BuildContext context,
+    FinanceRepository finance,
     String title,
     List<Income> incomes,
     List<String> people,
@@ -573,6 +582,13 @@ class BalancePage extends StatelessWidget {
       rows: [
         for (final income in incomes)
           ListTile(
+            onTap: readOnly
+                ? null
+                : () {
+                    // Se cierra la lista: al cambiar algo quedaría vieja.
+                    Navigator.pop(context);
+                    showIncomeActions(context, finance, income);
+                  },
             leading: CircleAvatar(
               backgroundColor: Color(0x2216A34A),
               child: Icon(Icons.south_west, color: context.money.income),

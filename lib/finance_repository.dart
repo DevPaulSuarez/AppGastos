@@ -583,6 +583,30 @@ class FinanceRepository {
 
   Future<void> deleteIncome(String id) => store.delete(_incomes, id);
 
+  /// Cambia el monto, la nota o la fecha de un ingreso. Se mantiene el id,
+  /// así un sueldo que se pasa de mes no se vuelve a anotar.
+  Future<void> updateIncome(
+    Income income, {
+    double? amount,
+    String? description,
+    DateTime? date,
+  }) {
+    return store.set(
+      _incomes,
+      income.id,
+      Income(
+        id: income.id,
+        person: income.person,
+        description: description ?? income.description,
+        amount: amount ?? income.amount,
+        day: date?.day ?? income.day,
+        month: date?.month ?? income.month,
+        year: date?.year ?? income.year,
+        expected: amount == null ? income.expected : null,
+      ).toMap(),
+    );
+  }
+
   /// Cambia lo que llegó de un sueldo (ej. faltó un día y llegó menos). Se
   /// guarda lo que debía llegar para mostrar que vino incompleto; si se pone
   /// de nuevo el monto completo, vuelve a quedar como completo.

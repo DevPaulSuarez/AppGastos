@@ -118,6 +118,12 @@ void main() {
     expect(find.text('Sueldo · Ana'), findsOneWidget);
     expect(find.text('Lo que entró este mes'), findsOneWidget);
     expect(find.text('+ S/. 1000.00'), findsOneWidget);
+    // Con los ingresos abiertos, lo que falta queda más abajo.
+    await tester.scrollUntilVisible(
+      find.text('Ya pagué'),
+      200,
+      scrollable: find.byType(Scrollable).first,
+    );
     expect(find.text('Ya pagué'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
