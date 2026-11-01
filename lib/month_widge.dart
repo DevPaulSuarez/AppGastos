@@ -1605,7 +1605,8 @@ class _MonthWidgetState extends State<MonthWidget> {
         : 'para los pagos del mes y la caja chica';
     // En números rojos, el número y el aviso van en rojo (en el tema
     // oscuro, el mismo rojo de los gastos).
-    final red = dark ? context.money.expense : const Color(0xFFFCA5A5);
+    // Rojo vivo: el rosado claro no se leía como "negativo".
+    final red = dark ? context.money.expense : const Color(0xFFFF4D4D);
     final monthName = monthNames[widget.month].toLowerCase();
 
     final String title;

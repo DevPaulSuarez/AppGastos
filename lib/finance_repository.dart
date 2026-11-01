@@ -1,5 +1,6 @@
 import 'dart:math';
 
+import 'package:primera_app_curso/bank_import.dart';
 import 'package:primera_app_curso/cash.dart';
 import 'package:primera_app_curso/categories.dart';
 import 'package:primera_app_curso/currency.dart';
@@ -582,6 +583,22 @@ class FinanceRepository {
   }
 
   Future<void> deleteIncome(String id) => store.delete(_incomes, id);
+
+  /// Cómo llaman y en qué categoría ponen cada comercio del banco (se
+  /// aprende al comprobar con el CSV del banco).
+  Future<Map<String, LearnedName>> bankNames() async {
+    final doc = await store.get(_settings, 'bankNames');
+    final names = (doc?.data['names'] as Map?)?.cast<String, dynamic>() ?? {};
+    return {
+      for (final e in names.entries)
+        e.key: LearnedName.fromMap((e.value as Map).cast<String, dynamic>()),
+    };
+  }
+
+  Future<void> saveBankNames(Map<String, LearnedName> names) =>
+      store.set(_settings, 'bankNames', {
+        'names': {for (final e in names.entries) e.key: e.value.toMap()},
+      });
 
   /// Cambia el monto, la nota o la fecha de un ingreso. Se mantiene el id,
   /// así un sueldo que se pasa de mes no se vuelve a anotar.
