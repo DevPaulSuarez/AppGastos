@@ -3,6 +3,7 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:primera_app_curso/categories.dart';
+import 'package:primera_app_curso/couple/space_state.dart';
 import 'package:primera_app_curso/currency.dart';
 import 'package:primera_app_curso/expense.dart';
 import 'package:primera_app_curso/category_select_widget.dart';
@@ -118,9 +119,15 @@ class _AddPageState extends State<AddPage> with SingleTickerProviderStateMixin {
       final has = items.any((r) => r.type == RecurringType.allowance);
       if (has && mounted) setState(() => _hasAllowances = true);
     });
+    // En pareja, quien anota es quien pagó (se puede cambiar). En cuenta
+    // individual se recuerda el último.
+    final me = Provider.of<SpaceState>(context, listen: false).myPerson;
+    if (me != null) payer = me;
     SharedPreferences.getInstance().then((prefs) {
       final lastPayer = prefs.getInt('last_payer');
-      if (lastPayer != null && mounted) setState(() => payer = lastPayer);
+      if (me == null && lastPayer != null && mounted) {
+        setState(() => payer = lastPayer);
+      }
       final last = prefs.getString('last_date');
       final parsed = last == null ? null : DateTime.tryParse(last);
       if (parsed != null && !_isToday(parsed) && mounted) {
@@ -397,8 +404,9 @@ class _AddPageState extends State<AddPage> with SingleTickerProviderStateMixin {
           const SizedBox(width: 12),
           Expanded(
             child: Text(
-              'Para pagos que varían: un cliente, un proyecto, un trabajo '
-              'extra. Los que se repiten igual se configuran en Ajustes.',
+              'Anota solo el dinero que entra de afuera: un cliente, un '
+              'trabajo extra, una devolución. No anotes envíos entre ustedes '
+              'ni lo que sacas de la caja chica. Los sueldos se anotan solos.',
               style: TextStyle(fontSize: 13, color: scheme.onSurfaceVariant),
             ),
           ),
@@ -604,7 +612,77 @@ class _AddPageState extends State<AddPage> with SingleTickerProviderStateMixin {
     );
   }
 
+  /// Aviso si lo que se va a guardar parece mover dinero de un lado a otro
+  /// (envíos entre ustedes, retiros, caja chica), que no se anota así.
+  Future<bool> _confirmNotAMove() async {
+    String plain(String s) => s
+        .toLowerCase()
+        .replaceAll('á', 'a')
+        .replaceAll('é', 'e')
+        .replaceAll('í', 'i')
+        .replaceAll('ó', 'o')
+        .replaceAll('ú', 'u');
+    final note = plain(detalle ?? '');
+    if (note.isEmpty) return true;
+    bool has(List<String> words) =>
+        words.any((w) => RegExp('\\b${RegExp.escape(w)}').hasMatch(note));
+
+    String? title;
+    String? message;
+    if (has(['caja chica', 'caja'])) {
+      title = '¿Es de la caja chica?';
+      message =
+          'Si sacas o devuelves dinero de la caja chica, no lo anotes '
+          'como gasto ni ingreso. Usa la tarjeta "Caja chica" en Inicio: '
+          '"Sacar" o "Ya devolví".';
+    } else if (has(['retiro', 'cajero', 'atm'])) {
+      title = '¿Es un retiro del cajero?';
+      message =
+          'Sacar dinero del banco no es un gasto: sigue siendo de ustedes. '
+          'Anota lo que hiciste con ese dinero, por ejemplo en Iglesia lo '
+          'que diste.';
+    } else {
+      final people = await Provider.of<FinanceRepository>(
+        context,
+        listen: false,
+      ).watchPeople().first;
+      final names = people.length > 1
+          ? people.map(plain).where((n) => n.length > 2).toList()
+          : <String>[];
+      final looksLikeTransfer =
+          has(['envio', 'transferencia', 'transfer']) ||
+          ((isIncome || category == 'Otros') && has(names));
+      if (looksLikeTransfer) {
+        title = '¿Es dinero entre ustedes?';
+        message =
+            'Pasar dinero de una cuenta a la otra no se anota: el dinero '
+            'sigue siendo de los dos. Solo se anota lo que sale o entra de '
+            'afuera.';
+      }
+    }
+    if (title == null || !mounted) return true;
+    final save = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(title!),
+        content: Text(message!),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Guardar igual'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('No guardar'),
+          ),
+        ],
+      ),
+    );
+    return save ?? false;
+  }
+
   Future<void> _save() async {
+    if (!await _confirmNotAMove() || !mounted) return;
     final db = Provider.of<ExpensesRepository>(context, listen: false);
     if (isIncome) {
       final finance = Provider.of<FinanceRepository>(context, listen: false);

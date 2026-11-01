@@ -602,11 +602,41 @@ class _MonthWidgetState extends State<MonthWidget> {
   Widget _ingresos() {
     final items = [...widget.incomeItems]
       ..sort((a, b) => a.day.compareTo(b.day));
+    final couple = widget.people.length > 1;
+    double totalOf(int person) => items
+        .where((i) => i.person == person)
+        .fold(0.0, (sum, i) => sum + i.amount);
+
+    Widget row(Income income) => _moveRow(
+      isIncome: true,
+      // En pareja ya van agrupados por persona.
+      name: couple
+          ? income.description
+          : _withPerson(income.description, income.person),
+      date: [
+        _dayLabel(DateTime(income.year, income.month, income.day)),
+        if (income.expected != null)
+          'llegó incompleto (era ${money(income.expected!)})',
+      ].join(' · '),
+      dateColor: income.expected == null ? null : context.money.warning,
+      amount: income.amount,
+      onTap: () => showIncomeActions(
+        context,
+        Provider.of<FinanceRepository>(context, listen: false),
+        income,
+      ),
+    );
+
     return _accordion(
       title: _isCurrentMonth
           ? 'Lo que entró este mes'
           : 'Lo que entró en ${monthNames[widget.month].toLowerCase()}',
-      summary: '${items.length} ${items.length == 1 ? 'ingreso' : 'ingresos'}',
+      summary: couple
+          ? [
+              for (var p = 0; p < widget.people.length; p++)
+                '${personName(widget.people, p)} ${money(totalOf(p))}',
+            ].join(' · ')
+          : '${items.length} ${items.length == 1 ? 'ingreso' : 'ingresos'}',
       total: Text(
         money(widget.incomes),
         style: TextStyle(
@@ -616,23 +646,15 @@ class _MonthWidgetState extends State<MonthWidget> {
         ),
       ),
       children: [
-        for (final income in items)
-          _moveRow(
-            isIncome: true,
-            name: _withPerson(income.description, income.person),
-            date: [
-              _dayLabel(DateTime(income.year, income.month, income.day)),
-              if (income.expected != null)
-                'llegó incompleto (era ${money(income.expected!)})',
-            ].join(' · '),
-            dateColor: income.expected == null ? null : context.money.warning,
-            amount: income.amount,
-            onTap: () => showIncomeActions(
-              context,
-              Provider.of<FinanceRepository>(context, listen: false),
-              income,
-            ),
-          ),
+        if (couple) ...[
+          for (var p = 0; p < widget.people.length; p++)
+            if (items.any((i) => i.person == p)) ...[
+              _personHeader(personName(widget.people, p), totalOf(p)),
+              for (final income in items.where((i) => i.person == p))
+                row(income),
+            ],
+        ] else
+          for (final income in items) row(income),
         if (items.isNotEmpty)
           Padding(
             padding: const EdgeInsets.only(top: 6),
@@ -645,6 +667,34 @@ class _MonthWidgetState extends State<MonthWidget> {
             ),
           ),
       ],
+    );
+  }
+
+  /// Encabezado de cada persona en "Lo que entró": nombre y su total.
+  Widget _personHeader(String name, double total) {
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.only(top: 10, bottom: 2),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              name,
+              style: TextStyle(
+                fontWeight: FontWeight.w800,
+                color: scheme.onSurface,
+              ),
+            ),
+          ),
+          Text(
+            money(total),
+            style: TextStyle(
+              fontWeight: FontWeight.w800,
+              color: context.money.income,
+            ),
+          ),
+        ],
+      ),
     );
   }
 
