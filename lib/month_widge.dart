@@ -182,6 +182,9 @@ class MonthWidget extends StatefulWidget {
 }
 
 class _MonthWidgetState extends State<MonthWidget> {
+  /// Personas abiertas en "Lo que entró" (cada una es un acordeón).
+  final Set<int> _openIncomePeople = {};
+
   GraphType graphType = GraphType.LINES;
 
   @override
@@ -649,9 +652,18 @@ class _MonthWidgetState extends State<MonthWidget> {
         if (couple) ...[
           for (var p = 0; p < widget.people.length; p++)
             if (items.any((i) => i.person == p)) ...[
-              _personHeader(personName(widget.people, p), totalOf(p)),
-              for (final income in items.where((i) => i.person == p))
-                row(income),
+              _personHeader(
+                personName(widget.people, p),
+                totalOf(p),
+                count: items.where((i) => i.person == p).length,
+                open: _openIncomePeople.contains(p),
+                onTap: () => setState(() {
+                  if (!_openIncomePeople.remove(p)) _openIncomePeople.add(p);
+                }),
+              ),
+              if (_openIncomePeople.contains(p))
+                for (final income in items.where((i) => i.person == p))
+                  row(income),
             ],
         ] else
           for (final income in items) row(income),
@@ -670,30 +682,58 @@ class _MonthWidgetState extends State<MonthWidget> {
     );
   }
 
-  /// Encabezado de cada persona en "Lo que entró": nombre y su total.
-  Widget _personHeader(String name, double total) {
+  /// Encabezado de cada persona en "Lo que entró": nombre, cuántos pagos y
+  /// su total. Al tocarlo se abren o cierran sus ingresos.
+  Widget _personHeader(
+    String name,
+    double total, {
+    required int count,
+    required bool open,
+    required VoidCallback onTap,
+  }) {
     final scheme = Theme.of(context).colorScheme;
-    return Padding(
-      padding: const EdgeInsets.only(top: 10, bottom: 2),
-      child: Row(
-        children: [
-          Expanded(
-            child: Text(
-              name,
-              style: TextStyle(
-                fontWeight: FontWeight.w800,
-                color: scheme.onSurface,
+    return InkWell(
+      borderRadius: BorderRadius.circular(8),
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    name,
+                    style: TextStyle(
+                      fontWeight: FontWeight.w800,
+                      color: scheme.onSurface,
+                    ),
+                  ),
+                  Text(
+                    '$count ${count == 1 ? 'ingreso' : 'ingresos'}',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: scheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
               ),
             ),
-          ),
-          Text(
-            money(total),
-            style: TextStyle(
-              fontWeight: FontWeight.w800,
-              color: context.money.income,
+            Text(
+              money(total),
+              style: TextStyle(
+                fontWeight: FontWeight.w800,
+                color: context.money.income,
+              ),
             ),
-          ),
-        ],
+            const SizedBox(width: 4),
+            Icon(
+              open ? Icons.expand_less : Icons.expand_more,
+              color: scheme.onSurfaceVariant,
+            ),
+          ],
+        ),
       ),
     );
   }
