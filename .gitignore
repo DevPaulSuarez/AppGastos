@@ -47,3 +47,7 @@ app.*.map.json
 
 # Salida de compilación de Android
 /android/build/
+
+# Reportes del banco con datos personales: nunca subir.
+Eliminar_reportesBanco/
+*.csv

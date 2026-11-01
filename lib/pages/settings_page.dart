@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:primera_app_curso/pages/bank_check_page.dart';
 import 'package:primera_app_curso/currency.dart';
 import 'package:primera_app_curso/categories.dart';
 import 'package:primera_app_curso/config.dart';
@@ -245,6 +246,18 @@ class _SettingsPageState extends State<SettingsPage> {
                 ),
                 trailing: const Icon(Icons.chevron_right),
                 onTap: () => openChurchReport(context, DateTime.now().year),
+              ),
+              const _Section('Banco'),
+              ListTile(
+                leading: const Icon(Icons.account_balance_outlined),
+                title: const Text('Comprobar con el banco'),
+                subtitle: const Text(
+                  'Sube el CSV del banco: ve qué coincide y qué falta anotar',
+                ),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const BankCheckPage()),
+                ),
               ),
               const _Section('Informes'),
               ListTile(

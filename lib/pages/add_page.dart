@@ -38,6 +38,9 @@ class _AddPageState extends State<AddPage> with SingleTickerProviderStateMixin {
   /// sugeridas y las que más se usaron antes.
   List<String> _quickNotes = const [];
 
+  /// Categorías ordenadas: primero las más usadas en los últimos meses.
+  List<String> _categoryOrder = categories.keys.toList();
+
   /// Si es una compra para otra persona que la devolverá: su nombre.
   String? owedBy;
 
@@ -119,6 +122,7 @@ class _AddPageState extends State<AddPage> with SingleTickerProviderStateMixin {
       final has = items.any((r) => r.type == RecurringType.allowance);
       if (has && mounted) setState(() => _hasAllowances = true);
     });
+    _sortCategoriesByUse();
     // En pareja, quien anota es quien pagó (se puede cambiar). En cuenta
     // individual se recuerda el último.
     final me = Provider.of<SpaceState>(context, listen: false).myPerson;
@@ -134,6 +138,30 @@ class _AddPageState extends State<AddPage> with SingleTickerProviderStateMixin {
         setState(() => _lastDate = parsed);
         _askDateWhenOpen();
       }
+    });
+  }
+
+  /// Cuenta cuántas veces se usó cada categoría en los últimos 3 meses y las
+  /// pone primero; las demás quedan en su orden de siempre.
+  void _sortCategoriesByUse() {
+    Provider.of<ExpensesRepository>(
+      context,
+      listen: false,
+    ).queryAll().first.then((expenses) {
+      final now = DateTime.now();
+      final since = DateTime(now.year, now.month - 2);
+      final counts = <String, int>{};
+      for (final e in expenses) {
+        if (DateTime(e.year, e.month).isBefore(since)) continue;
+        counts[e.category] = (counts[e.category] ?? 0) + 1;
+      }
+      final base = categories.keys.toList();
+      final order = [...base]
+        ..sort((a, b) {
+          final byUse = (counts[b] ?? 0).compareTo(counts[a] ?? 0);
+          return byUse != 0 ? byUse : base.indexOf(a) - base.indexOf(b);
+        });
+      if (mounted) setState(() => _categoryOrder = order);
     });
   }
 
@@ -320,7 +348,7 @@ class _AddPageState extends State<AddPage> with SingleTickerProviderStateMixin {
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 8),
             child: CategorySelectionWidget(
-              categories: categories.keys.toList(),
+              categories: _categoryOrder,
               selected: category,
               onSelected: _selectCategory,
             ),
