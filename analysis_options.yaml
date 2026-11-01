@@ -1,0 +1,7 @@
+analyzer:
+  exclude:
+    # Copias de paquetes que deja la compilación de iOS: no son nuestro código.
+    - build/**
+    - android/**
+    - ios/**
+    - web/**
