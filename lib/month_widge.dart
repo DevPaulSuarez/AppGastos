@@ -70,6 +70,10 @@ class MonthWidget extends StatefulWidget {
   /// empieza de cero: lo de antes está en la caja y no en [carriedOver].
   final PettyCashMonth? pettyCash;
 
+  /// Mes anterior en la caja chica, si todavía falta decidir cuánto de lo
+  /// que sobró queda en la caja (el resto va al ahorro).
+  final PettyCashMonth? pettyCashToSplit;
+
   /// Alerta a mostrar arriba (null si no hay o ya se ocultó).
   final SpendingAlert? alert;
   final VoidCallback? onDismissAlert;
@@ -92,6 +96,7 @@ class MonthWidget extends StatefulWidget {
     this.tithe,
     this.carriedOver = 0,
     this.pettyCash,
+    this.pettyCashToSplit,
     required List<Expense> documents,
     required int days,
   }) : allDocuments = documents,
@@ -208,6 +213,10 @@ class _MonthWidgetState extends State<MonthWidget> {
                 ),
         ),
         _resumen(),
+        if (widget.pettyCashToSplit != null) ...[
+          const SizedBox(height: 12),
+          _repartirSobrante(widget.pettyCashToSplit!),
+        ],
         if (widget.pettyCash != null && !widget.pettyCash!.isEmpty) ...[
           const SizedBox(height: 12),
           _cajaChica(widget.pettyCash!),
@@ -1206,6 +1215,7 @@ class _MonthWidgetState extends State<MonthWidget> {
     if (!current) {
       detail = box.result >= 0
           ? 'Entraron ${money(box.result)} que sobraron este mes'
+                '${box.sentToSavings > 0 ? ' · ${money(box.sentToSavings)} al ahorro' : ''}'
           : 'Salieron ${money(-box.result)} que faltaron este mes';
     } else if (box.owed > 0) {
       detail =
@@ -1292,6 +1302,99 @@ class _MonthWidgetState extends State<MonthWidget> {
                 const SizedBox(height: 4),
             ],
           ),
+        ),
+      ),
+    );
+  }
+
+  /// Al empezar el mes: cuánto de lo que sobró el mes pasado queda en la
+  /// caja chica. El resto se manda a la cuenta de ahorro.
+  Widget _repartirSobrante(PettyCashMonth prev) {
+    final scheme = Theme.of(context).colorScheme;
+    final name = monthNames[prev.month - 1].toLowerCase();
+    return Card(
+      color: scheme.secondaryContainer,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  Icons.inventory_2_outlined,
+                  color: scheme.onSecondaryContainer,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    'En $name sobraron ${money(prev.result)}',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w700,
+                      fontSize: 16,
+                      color: scheme.onSecondaryContainer,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Text(
+              '¿Cuánto ${_solo ? 'guardas' : 'guardan'} en la caja chica? '
+              'Lo demás se anota como ahorro.',
+              style: TextStyle(color: scheme.onSecondaryContainer),
+            ),
+            Align(
+              alignment: Alignment.centerRight,
+              child: FilledButton(
+                onPressed: () => _splitLeftover(prev),
+                child: const Text('Separar'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _splitLeftover(PettyCashMonth prev) async {
+    final finance = Provider.of<FinanceRepository>(context, listen: false);
+    final messenger = ScaffoldMessenger.of(context);
+    final name = monthNames[prev.month - 1].toLowerCase();
+    final values = await showFieldsDialog(
+      context,
+      title: '¿Cuánto va a la caja chica?',
+      confirm: 'Guardar',
+      hint:
+          'En $name sobraron ${money(prev.result)}. Lo que no '
+          '${_solo ? 'guardes' : 'guarden'} en la caja se anota como ahorro '
+          '(el dinero que se va a la otra cuenta).',
+      fields: [
+        DialogField(
+          'Para la caja chica',
+          initial: _plain(prev.result),
+          number: true,
+        ),
+      ],
+      validate: (v) {
+        final kept = parseAmount(v[0]);
+        if (kept == null || kept < 0) return 'Escribe un monto';
+        if (kept > prev.result + 0.005) {
+          return 'No puede ser más de ${money(prev.result)}';
+        }
+        return null;
+      },
+    );
+    if (values == null) return;
+    final kept = parseAmount(values[0])!;
+    await finance.splitPettyCashLeftover(prev, kept, name);
+    final saved = prev.result - kept;
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(
+          saved > 0.005
+              ? 'Caja chica: ${money(kept)} · Ahorro: ${money(saved)}'
+              : 'Todo quedó en la caja chica',
         ),
       ),
     );
@@ -1428,7 +1531,8 @@ class _MonthWidgetState extends State<MonthWidget> {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'Lo que sobra cada mes entra a la caja al terminar el mes. '
+                  'Lo que sobra cada mes entra a la caja (lo que '
+                  '${_solo ? 'decides' : 'deciden'} guardar; el resto va al ahorro). '
                   'Lo que sacan es un préstamo que se devuelve en el mismo mes.',
                   style: TextStyle(color: scheme.onSurfaceVariant),
                 ),
@@ -1456,6 +1560,12 @@ class _MonthWidgetState extends State<MonthWidget> {
                       color: sheetContext.money.warning,
                     ),
                 ] else ...[
+                  if (box.sentToSavings > 0)
+                    row(
+                      'Al ahorro (no entró a la caja)',
+                      box.sentToSavings,
+                      color: sheetContext.money.warning,
+                    ),
                   row(
                     box.inHand >= 0
                         ? '+ Sobrante del mes'
@@ -1516,6 +1626,26 @@ class _MonthWidgetState extends State<MonthWidget> {
                         ],
                       ),
                     ),
+                ],
+                if (box.closing != null) ...[
+                  const SizedBox(height: 12),
+                  OutlinedButton.icon(
+                    icon: const Icon(Icons.undo),
+                    label: const Text('Cambiar lo que fue a la caja'),
+                    onPressed: () async {
+                      if (await confirmDialog(
+                        sheetContext,
+                        'Se borra el ahorro de ${money(box.sentToSavings)} y '
+                        'en Inicio vuelve a preguntar cuánto va a la caja.',
+                        confirm: 'Cambiar',
+                      )) {
+                        await finance.undoPettyCashSplit(box.closing!);
+                        if (sheetContext.mounted) {
+                          Navigator.of(sheetContext).pop();
+                        }
+                      }
+                    },
+                  ),
                 ],
                 if (current) ...[
                   const SizedBox(height: 12),

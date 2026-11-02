@@ -281,6 +281,54 @@ class FinanceRepository {
 
   Future<void> deletePettyCashMove(String id) => store.delete(_pettyCash, id);
 
+  /// Reparte lo que sobró en el mes [box]: [kept] queda en la caja chica y
+  /// el resto se anota como ahorro (el último día de ese mes), porque se
+  /// manda a otra cuenta.
+  Future<void> splitPettyCashLeftover(
+    PettyCashMonth box,
+    double kept,
+    String monthName,
+  ) async {
+    final saved = max(0.0, box.result - kept);
+    final lastDay = DateTime(box.year, box.month + 1, 0);
+    String? savedId;
+    if (saved > 0.005) {
+      savedId = await store.add(
+        'expenses',
+        Expense(
+          id: '',
+          category: ahorroCategory,
+          value: saved,
+          day: lastDay.day,
+          month: lastDay.month,
+          year: lastDay.year,
+          description: 'Lo que sobró de $monthName',
+        ).toMap(),
+      );
+    }
+    await store.add(
+      _pettyCash,
+      PettyCashMove(
+        amount: saved,
+        taken: false,
+        year: lastDay.year,
+        month: lastDay.month,
+        day: lastDay.day,
+        closing: true,
+        savedId: savedId,
+      ).toMap(),
+    );
+  }
+
+  /// Deshace el reparto: todo lo que sobró vuelve a la caja y se borra el
+  /// ahorro que se había anotado.
+  Future<void> undoPettyCashSplit(PettyCashMove closing) async {
+    if (closing.savedId != null) {
+      await store.delete('expenses', closing.savedId!);
+    }
+    await store.delete(_pettyCash, closing.id);
+  }
+
   /// Cuánto hay de verdad hoy en la caja chica ([real]). Corrige el punto de
   /// partida para que la caja de la app ([calculated]) dé lo mismo.
   Future<void> setPettyCashAmount(double real, double calculated) async {
