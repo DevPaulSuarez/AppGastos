@@ -13,6 +13,11 @@ class PettyCashMove {
 
   /// true si lo sacaron de la caja; false si lo devolvieron.
   final bool taken;
+
+  /// Cierre del mes: de lo que sobró, [amount] se mandó al ahorro (gasto
+  /// "Ahorro Neto" con id [savedId]) y el resto quedó en la caja.
+  final bool closing;
+  final String? savedId;
   final int year;
   final int month;
   final int day;
@@ -24,6 +29,8 @@ class PettyCashMove {
     required this.year,
     required this.month,
     required this.day,
+    this.closing = false,
+    this.savedId,
   });
 
   factory PettyCashMove.fromMap(String id, Map<String, dynamic> map) =>
@@ -37,6 +44,8 @@ class PettyCashMove {
         year: map['year'] as int,
         month: map['month'] as int,
         day: map['day'] as int,
+        closing: map['closing'] as bool? ?? false,
+        savedId: map['savedId'] as String?,
       );
 
   Map<String, dynamic> toMap() => {
@@ -46,11 +55,14 @@ class PettyCashMove {
     'year': year,
     'month': month,
     'day': day,
+    if (closing) 'closing': true,
+    if (savedId != null) 'savedId': savedId,
   };
 }
 
-/// La caja chica en un mes. Lo que sobra cada mes entra solo a la caja al
-/// terminar el mes, así cada mes empieza de cero. Si un mes falta dinero
+/// La caja chica en un mes. Lo que sobra cada mes entra a la caja al
+/// terminar el mes, así cada mes empieza de cero. Al empezar el mes siguiente
+/// eligen cuánto de lo que sobró queda en la caja; el resto se va al ahorro. Si un mes falta dinero
 /// (ej. el alquiler llega antes que el sueldo), se saca de la caja como
 /// préstamo y se devuelve en el mismo mes.
 class PettyCashMonth {
@@ -65,12 +77,16 @@ class PettyCashMonth {
   final double result;
   final List<PettyCashMove> moves;
 
+  /// Cómo se repartió lo que sobró este mes (caja / ahorro), si ya lo hicieron.
+  final PettyCashMove? closing;
+
   const PettyCashMonth({
     required this.month,
     required this.year,
     required this.start,
     required this.result,
     this.moves = const [],
+    this.closing,
   });
 
   /// Caja chica del mes [month]/[year] según todo lo registrado.
@@ -86,15 +102,23 @@ class PettyCashMonth {
     double freeUntil(DateTime d) =>
         cashSummaryUntil(incomes, expenses, check, people, d).free;
     final start = freeUntil(DateTime(year, month, 0));
+    final ofMonth = moves.where((m) => m.month == month && m.year == year);
     return PettyCashMonth(
       month: month,
       year: year,
       start: start,
       result: freeUntil(DateTime(year, month + 1, 0)) - start,
-      moves: moves.where((m) => m.month == month && m.year == year).toList()
+      moves: ofMonth.where((m) => !m.closing).toList()
         ..sort((a, b) => a.day.compareTo(b.day)),
+      closing: ofMonth.where((m) => m.closing).firstOrNull,
     );
   }
+
+  /// Lo que se mandó al ahorro de lo que sobró este mes.
+  double get sentToSavings => closing?.amount ?? 0;
+
+  /// Si todavía falta decidir cuánto de lo que sobró queda en la caja.
+  bool get needsSplit => closing == null && result > 0.005;
 
   double get taken =>
       moves.where((m) => m.taken).fold(0.0, (a, m) => a + m.amount);

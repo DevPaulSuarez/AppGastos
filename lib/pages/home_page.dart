@@ -312,6 +312,20 @@ class _InicioState extends State<Inicio> {
                         selectedYear,
                       )
                     : null;
+                // Al empezar el mes: falta decidir cuánto de lo que sobró el
+                // mes pasado queda en la caja (el resto va al ahorro).
+                final prevMonth = DateTime(selectedYear, month - 1);
+                final prevBox = pettyCash != null && _isCurrentMonth
+                    ? PettyCashMonth.of(
+                        values[6] as List<Income>,
+                        values[7] as List<Expense>,
+                        values[8] as CashCheck?,
+                        people.length,
+                        values[11] as List<PettyCashMove>,
+                        prevMonth.month,
+                        prevMonth.year,
+                      )
+                    : null;
 
                 // Lo que todavía falta este mes: sueldos por cobrar, fijos y
                 // propinas por pagar, pagos de fecha variable por confirmar.
@@ -383,6 +397,9 @@ class _InicioState extends State<Inicio> {
                   people: people,
                   carriedOver: carriedOver,
                   pettyCash: pettyCash,
+                  pettyCashToSplit: prevBox != null && prevBox.needsSplit
+                      ? prevBox
+                      : null,
                   pendingLoans: (values[4] as List<Expense>)
                       .where((e) => e.pending > 0.001)
                       .toList(),

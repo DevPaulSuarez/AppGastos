@@ -132,6 +132,44 @@ void main() {
       await finance.setPettyCashAmount(600, 700);
       expect((await finance.watchCashCheck().first)!.offsets.first, 100);
     });
+
+    test('lo que no queda en la caja se va al ahorro', () async {
+      SharedPreferences.setMockInitialValues({});
+      final store = MemoryStore();
+      final finance = FinanceRepository(store);
+      Future<PettyCashMonth> month(int m) async {
+        final all = [
+          for (final d in await store.watch('expenses').first)
+            Expense.fromMap(d.id, d.data),
+        ];
+        return PettyCashMonth.of(
+          incomes,
+          [...expenses, ...all],
+          check,
+          1,
+          await finance.watchPettyCash().first,
+          m,
+          2026,
+        );
+      }
+
+      // Septiembre sobraron 500: 200 a la caja, 300 al ahorro.
+      var sept = await month(9);
+      expect(sept.needsSplit, isTrue);
+      await finance.splitPettyCashLeftover(sept, 200, 'septiembre');
+      sept = await month(9);
+      expect(sept.needsSplit, isFalse);
+      expect(sept.sentToSavings, 300);
+      expect(sept.result, 200);
+      expect(sept.moves, isEmpty);
+      expect((await month(10)).start, 1200);
+
+      // Deshacer: todo vuelve a la caja y se vuelve a preguntar.
+      await finance.undoPettyCashSplit(sept.closing!);
+      sept = await month(9);
+      expect(sept.needsSplit, isTrue);
+      expect((await month(10)).start, 1500);
+    });
   });
 
   testWidgets('con caja chica el mes empieza de cero y lo sacado se devuelve', (
